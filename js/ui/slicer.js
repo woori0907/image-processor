@@ -17,6 +17,16 @@
  *   · 원본 → 화면:  CSS top을 %로 (y / 원본 높이 × 100%)
  * %를 쓰면 창 크기가 바뀌어도 다시 계산할 필요가 없어요.
  *
+ * ── 끌기: 시작점 + 이동량 ──
+ * 선을 끌 때 "포인터 위치 = 선 위치"로 두면, 선의 잡는 영역(위아래 8px)을 살짝 비껴 잡았을 때
+ * 선이 포인터 쪽으로 툭 튀어요. 그래서 "잡았을 때의 선 위치 + 포인터가 움직인 거리"로 계산해요.
+ * Shift를 누르고 있으면 움직인 거리를 10px 단위로 반올림해요. (키보드 Shift+↑↓와 같은 10px 이동)
+ *
+ * ── 확대 보기 ──
+ * 기본은 "맞춤"(가로 폭에 맞춰 축소, 페이지가 스크롤). 확대하면 이미지 틀(.sl-frame)의 가로를
+ * "원본 px × 배율"로 키우고, 이미지 영역(.sl-stage)이 화면 높이만큼의 스크롤 상자가 돼요.
+ * 선·조각 위치는 원래 %로 그리기 때문에 확대해도 다시 계산할 게 없어요.
+ *
  * ── 상태 → render() ──
  * 선을 추가·이동·삭제하면 데이터(cuts.js)만 고치고 render()를 불러 화면 전체를 다시 그려요.
  * (preview.js와 같은 패턴)
@@ -39,6 +49,7 @@ export function createSlicer(root) {
   const settings = createSettings(root, 'slice-format'); // 형식·품질 패널은 다른 탭과 같은 코드
   const drop = $('.drop');
   const editor = $('.slicer');
+  const stage = $('.sl-stage');
   const frame = $('.sl-frame');
   const img = $('.sl-img');
   const piecesLayer = $('.sl-pieces-layer');
@@ -52,13 +63,24 @@ export function createSlicer(root) {
   const saveBtn = $('[data-action="save"]');
   const resetBtn = $('[data-action="reset"]');
   const closeBtn = $('[data-action="close"]');
+  const zoomValue = $('.sl-zoom-value');
+  const zoomInBtn = $('[data-action="zoom-in"]');
+  const zoomOutBtn = $('[data-action="zoom-out"]');
+  const zoomFitBtn = $('[data-action="zoom-fit"]');
+  const zoom100Btn = $('[data-action="zoom-100"]');
 
   /** 지금 열린 이미지 { file, url, width, height, cuts }. 없으면 null */
   let doc = null;
   /** 저장 중이면 true (그동안 다른 조작을 막아요) */
   let busy = false;
-  /** 끌고 있는 선의 순번. 안 끌면 null */
-  let dragIndex = null;
+  /**
+   * 끄는 중인 선 정보. 안 끌면 null
+   *   { index, fromY: 잡았을 때 선 위치, startY: 잡았을 때 포인터의 원본 y,
+   *     clientY: 마지막 포인터 화면 y, shift: Shift를 누르고 있는지, raf: 자동 스크롤 번호 }
+   */
+  let drag = null;
+  /** 확대 배율 (원본 px 대비). 0이면 "맞춤" */
+  let zoom = 0;
   /** 화면에 있는 선 요소들. 매번 새로 만들지 않고 재사용해요 (아래 renderLines 설명 참고) */
   const lineEls = [];
 
@@ -95,13 +117,17 @@ export function createSlicer(root) {
     drop.hidden = true;
     editor.hidden = false;
     setStatus('');
+    zoom = 0; // 새 이미지는 항상 "맞춤"으로 시작
+    applyZoomLayout();
     render();
   }
 
   function close() {
     if (doc) URL.revokeObjectURL(doc.url); // 다 쓴 임시 주소 해제 (store.js와 같은 이유)
     doc = null;
-    dragIndex = null;
+    stopDrag();
+    zoom = 0;
+    applyZoomLayout();
     img.removeAttribute('src');
     lineEls.splice(0).forEach((el) => el.remove());
     piecesLayer.replaceChildren();
@@ -121,6 +147,12 @@ export function createSlicer(root) {
     return Math.min(doc.height, Math.max(0, y));
   }
 
+  /** 화면 y → 원본 y (반올림·범위 제한 없이. 끌기에서 "움직인 거리"를 잴 때 씀) */
+  function rawY(clientY) {
+    const r = frame.getBoundingClientRect();
+    return ((clientY - r.top) / r.height) * doc.height;
+  }
+
   /** 원본 y(px) → CSS top 값(%) */
   const pct = (y) => `${(y / doc.height) * 100}%`;
 
@@ -138,7 +170,7 @@ export function createSlicer(root) {
   });
 
   frame.addEventListener('pointermove', (e) => {
-    if (!doc || dragIndex !== null || e.target.closest('.sl-cut')) {
+    if (!doc || drag || e.target.closest('.sl-cut')) {
       guide.hidden = true;
       return;
     }
@@ -170,18 +202,29 @@ export function createSlicer(root) {
       e.preventDefault(); // 글자 선택·이미지 끌기 같은 브라우저 기본 동작 막기
       el.setPointerCapture(e.pointerId);
       el.focus({ preventScroll: true });
-      dragIndex = index();
+      const k = index();
+      drag = {
+        index: k,
+        fromY: doc.cuts.list()[k],
+        startY: rawY(e.clientY),
+        clientY: e.clientY,
+        shift: e.shiftKey,
+        raf: requestAnimationFrame(autoScroll),
+      };
       el.classList.add('dragging');
       guide.hidden = true;
-    });
-    el.addEventListener('pointermove', (e) => {
-      if (dragIndex === null) return;
-      doc.cuts.move(dragIndex, yFromEvent(e));
       render();
     });
+    el.addEventListener('pointermove', (e) => {
+      if (!drag) return;
+      drag.clientY = e.clientY;
+      drag.shift = e.shiftKey;
+      applyDrag();
+    });
     const endDrag = () => {
-      dragIndex = null;
+      stopDrag();
       el.classList.remove('dragging');
+      render(); // 끄는 동안만 보이던 이동량(+30) 표시 지우기
     };
     el.addEventListener('pointerup', endDrag);
     el.addEventListener('pointercancel', endDrag);
@@ -211,6 +254,179 @@ export function createSlicer(root) {
     linesLayer.append(el);
     return el;
   }
+
+  /** 끄는 중인 선을 마지막 포인터 위치에 맞춰 옮겨요 (포인터가 멈춰도 스크롤되면 다시 불려요) */
+  function applyDrag() {
+    const dy = rawY(drag.clientY) - drag.startY; // 잡은 뒤로 움직인 거리 (원본 px)
+    // Shift: 10px 단위로 반올림 → 30, 40, 50 … 만큼만 움직여요
+    const step = drag.shift ? Math.round(dy / 10) * 10 : Math.round(dy);
+    doc.cuts.move(drag.index, drag.fromY + step); // 이웃 선·이미지 끝을 넘으면 cuts.js가 막아줘요
+    render();
+  }
+
+  function stopDrag() {
+    if (drag) cancelAnimationFrame(drag.raf);
+    drag = null;
+  }
+
+  // 끄는 도중에 Shift만 누르거나 떼도 바로 반영 (포인터를 안 움직여도)
+  ['keydown', 'keyup'].forEach((type) => window.addEventListener(type, (e) => {
+    if (!drag || e.key !== 'Shift' || drag.shift === e.shiftKey) return;
+    drag.shift = e.shiftKey;
+    applyDrag();
+  }));
+
+  /**
+   * 저절로 스크롤: 끄는 동안 포인터가 보이는 영역의 위·아래 끝 근처면 그쪽으로 스크롤해요.
+   * 확대 중이면 이미지 영역(stage)을, 맞춤이면 페이지(window)를 스크롤해요.
+   * pointermove는 포인터가 "움직일 때만" 와서, 가만히 대고 있어도 계속 스크롤되려면
+   * requestAnimationFrame으로 매 화면 갱신마다 직접 확인해야 해요. (region-picker.js와 같은 방법)
+   */
+  function autoScroll() {
+    if (!drag) return;
+    const EDGE = 40;
+    const box = zoom ? stage.getBoundingClientRect() : { top: 0, bottom: window.innerHeight };
+    let dy = 0;
+    if (drag.clientY < box.top + EDGE) dy = drag.clientY - (box.top + EDGE);
+    else if (drag.clientY > box.bottom - EDGE) dy = drag.clientY - (box.bottom - EDGE);
+    if (dy) {
+      dy = Math.max(-24, Math.min(24, dy / 2)); // 끝에 가까울수록 빠르게, 최대 24px씩
+      const before = zoom ? stage.scrollTop : window.scrollY;
+      if (zoom) stage.scrollTop += dy;
+      else window.scrollBy(0, dy);
+      if ((zoom ? stage.scrollTop : window.scrollY) !== before) applyDrag();
+    }
+    drag.raf = requestAnimationFrame(autoScroll);
+  }
+
+  // ─────────────────────────────────────────────
+  // 확대 보기
+  // ─────────────────────────────────────────────
+
+  /** 버튼으로 오갈 배율들 (원본 px 대비) */
+  const ZOOM_STEPS = [0.25, 0.5, 1, 1.5, 2, 3, 4, 6, 8];
+  const MAX_ZOOM = ZOOM_STEPS[ZOOM_STEPS.length - 1];
+
+  /** "맞춤"일 때의 배율: 이미지 영역 가로에 맞추되, 원본보다 크게 늘리지는 않아요 */
+  function fitScale() {
+    const cs = getComputedStyle(stage);
+    const availW = stage.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+    return Math.min(1, availW / doc.width);
+  }
+
+  const currentScale = () => zoom || fitScale();
+
+  /** zoom 값에 맞게 틀 크기·클래스만 바꿔요 (스크롤 위치는 setZoom이 맞춰요) */
+  function applyZoomLayout() {
+    editor.classList.toggle('zoomed', zoom > 0);
+    // 200% 이상이면 픽셀을 흐리게 섞지 않고 네모난 그대로 → 어디가 경계인지 또렷해요
+    editor.classList.toggle('pixelated', zoom >= 2);
+    if (!doc) {
+      frame.style.width = '';
+      return;
+    }
+    frame.style.width = zoom ? `${Math.round(doc.width * zoom)}px` : '';
+    frame.style.maxWidth = zoom ? 'none' : `${doc.width}px`;
+  }
+
+  /**
+   * 배율을 바꿔요. 바꾼 뒤에도 (clientX, clientY) 아래에 있던 이미지 지점이 그 자리에 머물도록
+   * 스크롤을 맞춰요. 위치를 안 주면 지금 보이는 영역의 가운데를 기준으로 해요.
+   * @param {number} z 원하는 배율. 맞춤 배율 이하면 "맞춤"(0)이 돼요
+   */
+  function setZoom(z, clientX, clientY) {
+    if (!doc) return;
+    const wasZoomed = zoom > 0;
+
+    // ① 기준점: 화면 위치 → 원본 좌표 (바꾸기 전 배치로 계산)
+    if (clientX === undefined) {
+      const sr = stage.getBoundingClientRect();
+      clientX = sr.left + stage.clientWidth / 2;
+      // 맞춤일 때는 이미지 영역이 화면보다 길 수 있어서, 화면에 실제로 보이는 부분의 가운데로
+      clientY = (Math.max(sr.top, 0) + Math.min(sr.bottom, window.innerHeight)) / 2;
+    }
+    const fr = frame.getBoundingClientRect();
+    const sx = ((clientX - fr.left) / fr.width) * doc.width;
+    const sy = ((clientY - fr.top) / fr.height) * doc.height;
+
+    // ② 배율 적용
+    zoom = z > fitScale() + 1e-6 ? Math.min(z, MAX_ZOOM) : 0;
+    applyZoomLayout();
+
+    // ③ 기준점이 다시 그 화면 위치에 오도록 스크롤
+    if (zoom) {
+      if (!wasZoomed) {
+        // 맞춤 → 확대: 이미지 영역이 화면 높이만큼의 스크롤 상자로 바뀌니, 페이지를 편집 화면 맨 위로
+        window.scrollBy(0, editor.getBoundingClientRect().top - 16);
+      }
+      // 기준점이 스크롤 상자 밖이면 상자 안쪽으로 끌어와요
+      const sr = stage.getBoundingClientRect();
+      clientX = Math.min(Math.max(clientX, sr.left), sr.left + stage.clientWidth);
+      clientY = Math.min(Math.max(clientY, sr.top), sr.top + stage.clientHeight);
+      const nr = frame.getBoundingClientRect();
+      stage.scrollLeft += nr.left + (sx / doc.width) * nr.width - clientX;
+      stage.scrollTop += nr.top + (sy / doc.height) * nr.height - clientY;
+    } else {
+      const nr = frame.getBoundingClientRect();
+      window.scrollBy(0, nr.top + (sy / doc.height) * nr.height - clientY);
+    }
+    updateZoomUI();
+    updateViewOffsets();
+  }
+
+  /** 지금 배율보다 한 단계 크게/작게 */
+  function stepZoom(dir) {
+    const s = currentScale();
+    const next = dir > 0
+      ? ZOOM_STEPS.find((z) => z > s * 1.01)
+      : [...ZOOM_STEPS].reverse().find((z) => z < s * 0.99);
+    setZoom(next ?? (dir > 0 ? MAX_ZOOM : 0));
+  }
+
+  function updateZoomUI() {
+    if (!doc) return;
+    const s = currentScale();
+    zoomValue.textContent = zoom ? `${Math.round(zoom * 100)}%` : `맞춤 ${Math.round(s * 100)}%`;
+    zoomOutBtn.disabled = !zoom;
+    zoomInBtn.disabled = zoom >= MAX_ZOOM;
+    zoomFitBtn.disabled = !zoom;
+    zoom100Btn.disabled = Math.abs(s - 1) < 1e-6;
+  }
+
+  /**
+   * 선 옆 숫자표(오른쪽)와 조각 번호(왼쪽)는 원래 이미지 끝에 붙어 있어요.
+   * 확대해서 가로로 스크롤하면 화면 밖으로 나가 버리니, 보이는 영역 끝에 붙어 있도록
+   * "틀이 보이는 영역 밖으로 얼마나 삐져나갔는지"를 CSS 변수로 알려줘요. (style.css에서 사용)
+   */
+  function updateViewOffsets() {
+    const sr = stage.getBoundingClientRect();
+    const fr = frame.getBoundingClientRect();
+    const visibleRight = sr.left + stage.clientLeft + stage.clientWidth; // 세로 스크롤바 제외
+    frame.style.setProperty('--view-left', `${Math.max(0, sr.left - fr.left)}px`);
+    frame.style.setProperty('--view-right', `${Math.max(0, fr.right - visibleRight)}px`);
+  }
+
+  zoomInBtn.addEventListener('click', () => stepZoom(1));
+  zoomOutBtn.addEventListener('click', () => stepZoom(-1));
+  zoomFitBtn.addEventListener('click', () => setZoom(0));
+  zoom100Btn.addEventListener('click', () => setZoom(1));
+  stage.addEventListener('scroll', updateViewOffsets);
+  // 창 크기가 바뀌면 "맞춤" 배율도 달라져요
+  new ResizeObserver(() => {
+    if (!doc) return;
+    if (zoom && zoom <= fitScale()) setZoom(0); // 창이 넓어져서 확대가 의미 없어졌으면 맞춤으로
+    updateZoomUI();
+    updateViewOffsets();
+  }).observe(stage);
+
+  // ⌘(또는 Ctrl) + 휠 / 트랙패드 핀치: 커서 위치를 중심으로 확대·축소
+  // (핀치는 브라우저가 ctrlKey가 붙은 wheel 이벤트로 보내줘요)
+  // passive: false → preventDefault()로 브라우저 자체 화면 확대를 막겠다고 미리 알려요
+  stage.addEventListener('wheel', (e) => {
+    if (!doc || !(e.ctrlKey || e.metaKey)) return; // 그냥 휠은 평소처럼 스크롤
+    e.preventDefault();
+    setZoom(currentScale() * Math.exp(-e.deltaY * 0.003), e.clientX, e.clientY);
+  }, { passive: false });
 
   // ─────────────────────────────────────────────
   // 오른쪽 목록 조작 (이벤트 위임: 목록 전체에 한 번만 등록)
@@ -296,6 +512,7 @@ export function createSlicer(root) {
     renderLines(cuts);
     renderPieceLayer(pieces);
     renderList(cuts, pieces);
+    updateZoomUI();
     saveBtn.disabled = busy || cuts.length === 0;
     resetBtn.disabled = busy || cuts.length === 0;
     closeBtn.disabled = busy;
@@ -314,7 +531,10 @@ export function createSlicer(root) {
       const el = lineEls[k];
       el.dataset.index = String(k);
       el.style.top = pct(y);
-      el.querySelector('output').textContent = `${y}px`;
+      // 끄는 중이면 잡은 뒤로 얼마나 움직였는지도 보여줘요: "1230px (+30)"
+      let label = `${y}px`;
+      if (drag?.index === k && y !== drag.fromY) label += ` (${y > drag.fromY ? '+' : ''}${y - drag.fromY})`;
+      el.querySelector('output').textContent = label;
       el.setAttribute('aria-label', `자르는 선 ${k + 1}`);
       el.setAttribute('aria-valuenow', String(y));
       el.setAttribute('aria-valuemin', '1');

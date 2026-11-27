@@ -319,7 +319,8 @@ input[type="range"] { accent-color: var(--accent); margin-top: 10px; }
 .sl-piece-no {
   position: absolute;
   top: 6px;
-  left: 6px;
+  /* --view-left: 확대해서 가로로 스크롤해도 보이는 영역 왼쪽 끝에 붙어 있게 (slicer.js의 updateViewOffsets) */
+  left: calc(6px + var(--view-left, 0px));
   padding: 1px 7px;
   border-radius: 6px;
   background: rgb(0 0 0 / .6);
@@ -354,7 +355,7 @@ input[type="range"] { accent-color: var(--accent); margin-top: 10px; }
 .sl-cut:focus-visible::before, .sl-cut.dragging::before { height: 3px; box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--cut); }
 .sl-cut-tag {
   position: absolute;
-  right: 6px;
+  right: calc(6px + var(--view-right, 0px)); /* 보이는 영역 오른쪽 끝에 붙어 있게 */
   top: 50%;
   transform: translateY(-50%);
   display: flex;
@@ -391,7 +392,7 @@ input[type="range"] { accent-color: var(--accent); margin-top: 10px; }
 }
 .sl-guide span {
   position: absolute;
-  left: 6px;
+  left: calc(6px + var(--view-left, 0px));
   bottom: 2px;
   padding: 0 6px;
   border-radius: 4px;
@@ -460,6 +461,32 @@ input[type="range"] { accent-color: var(--accent); margin-top: 10px; }
 .sl-row-del { padding: 3px 8px; font-size: 12px; }
 
 .sl-actions { display: flex; flex-direction: column; gap: 6px; }
+
+/* 확대 보기 버튼 줄 */
+.sl-zoom { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.sl-zoom .btn { padding: 4px 10px; font-size: 13px; }
+.sl-zoom-value { min-width: 64px; text-align: center; font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.sl-zoom .hint { flex-basis: 100%; margin-top: 2px; }
+.sl-zoom kbd {
+  padding: 0 5px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--bg);
+  font: inherit;
+  font-size: 12px;
+}
+
+/* 확대 중: 이미지 영역이 화면 높이만큼의 스크롤 상자가 돼요 (가로·세로 스크롤) */
+.slicer.zoomed .sl-stage {
+  position: sticky;
+  top: 16px;
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  overscroll-behavior: contain; /* 끝까지 스크롤해도 뒤 페이지가 같이 스크롤되지 않게 */
+}
+.slicer.zoomed .sl-frame { margin: 0; flex: none; }
+/* 200% 이상: 픽셀을 부드럽게 섞지 않고 네모 그대로 보여줘서 경계가 또렷해요 */
+.slicer.pixelated .sl-img { image-rendering: pixelated; }
 .sl-status { margin: 0; font-size: 13px; color: var(--good); min-height: 1.5em; }
 .sl-status.error { color: var(--bad); }
 
