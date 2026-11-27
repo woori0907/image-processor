@@ -3,11 +3,8 @@
  *
  * 데이터(store.js의 item)를 받아서 화면(HTML)으로 보여주는 일만 해요.
  * 버튼을 눌렀을 때 "무엇을 할지"는 직접 정하지 않고, 넘겨받은
- * 콜백 함수(handlers)를 호출해요. 그래서 이 파일은 압축·업스케일 로직을 전혀 몰라요.
- *
- * mode('compress' | 'upscale')에 따라 보여주는 정보만 조금 달라요:
- *   - 압축:     "WebP 230 KB · 85% 절감"   ← 얼마나 줄었는지가 중요
- *   - 업스케일: "200×150 → 400×300"       ← 얼마나 커졌는지가 중요
+ * 콜백 함수(handlers)를 호출해요. 그래서 이 파일은 압축 로직을 전혀 몰라요.
+ * 결과는 "WebP 230 KB · 85% 절감"처럼 얼마나 줄었는지 보여줘요.
  *
  * ── 보안 팁: textContent vs innerHTML ──
  * 파일 이름처럼 사용자가 정한 글자는 항상 textContent로 넣어요.
@@ -41,7 +38,7 @@ export function createRow(item, { onPreview, onToggle }) {
   return li;
 }
 
-/** 처리 중 상태 문구 표시 ('압축 중…', 'AI 업스케일 중… 42%' 등) */
+/** 처리 중 상태 문구 표시 ('압축 중…' 등) */
 export function showStatus(item, text) {
   const meta = item.el.querySelector('.meta');
   meta.querySelectorAll('.detail').forEach((d, i) => { if (i) d.remove(); }); // 첫 줄만 남김
@@ -53,11 +50,10 @@ export function showStatus(item, text) {
 /**
  * 처리 결과 표시: 썸네일, 크기·용량 정보, 미리보기·다운로드 버튼
  * @param {import('../store.js').Item} item
- * @param {'compress'|'upscale'} mode
  * @param {(item)=>void} onPreview
  */
-export function showResult(item, mode, onPreview) {
-  const { file, results, upInfo } = item;
+export function showResult(item, onPreview) {
+  const { file, results } = item;
   const meta = item.el.querySelector('.meta');
   const actions = item.el.querySelector('.actions');
   meta.querySelectorAll('.detail').forEach((d) => d.remove());
@@ -71,17 +67,7 @@ export function showResult(item, mode, onPreview) {
     results.length > 1 ? file.name.replace(/\.[^.]+$/, '') : first.name;
 
   // 첫 줄: 크기 정보
-  const info = el('div', 'detail');
-  if (mode === 'upscale' && upInfo?.factor) {
-    // 결과 크기 ÷ 배율 = 원본 크기
-    const ow = Math.round(first.width / upInfo.factor);
-    const oh = Math.round(first.height / upInfo.factor);
-    info.append(`${ow}×${oh} → ${first.width}×${first.height} · `, el('span', 'tag-ai', `AI ${upInfo.factor}배`));
-    if (upInfo.note) info.append(` · ${upInfo.note}`);
-  } else {
-    info.textContent = `${first.width}×${first.height} · 원본 ${formatBytes(file.size)}`;
-  }
-  meta.append(info);
+  meta.append(el('div', 'detail', `${first.width}×${first.height} · 원본 ${formatBytes(file.size)}`));
 
   actions.append(button('미리보기', 'btn ghost', () => onPreview(item)));
 
@@ -89,10 +75,8 @@ export function showResult(item, mode, onPreview) {
   for (const r of results) {
     const line = el('div', 'detail');
     line.append(el('span', 'fmt', LABEL[r.type]), formatBytes(r.blob.size));
-    if (mode === 'compress') {
-      const pct = savingPct(file.size, r.blob.size);
-      line.append(' · ', el('span', `saving ${pct > 0 ? 'good' : 'bad'}`, savingLabel(pct)));
-    }
+    const pct = savingPct(file.size, r.blob.size);
+    line.append(' · ', el('span', `saving ${pct > 0 ? 'good' : 'bad'}`, savingLabel(pct)));
     if (r.fellBack) line.append(' · 이 브라우저는 WebP를 만들 수 없어 JPG로 저장했어요');
     meta.append(line);
 
@@ -112,9 +96,8 @@ export function setRowSelected(item, on) {
 /**
  * 탭 하나의 요약 영역(목록 위 막대)을 담당해요.
  * @param {HTMLElement} root 탭 패널 요소
- * @param {'compress'|'upscale'} mode
  */
-export function createSummaryBar(root, mode) {
+export function createSummaryBar(root) {
   const els = {
     summary: root.querySelector('.summary'),
     text: root.querySelector('.summary-text'),
@@ -147,9 +130,7 @@ export function createSummaryBar(root, mode) {
       }
       const parts = [...byType].map(([type, { before, after }]) => {
         const prefix = byType.size > 1 ? `${LABEL[type]} ` : '';
-        return mode === 'compress'
-          ? `${prefix}${formatBytes(before)} → ${formatBytes(after)} (${savingPct(before, after)}% 절감)`
-          : `${prefix}합계 ${formatBytes(after)}`;
+        return `${prefix}${formatBytes(before)} → ${formatBytes(after)} (${savingPct(before, after)}% 절감)`;
       });
       els.text.append(el('strong', '', `${done.length}장 완료 · ${parts.join(' / ')}`));
       const pending = items.length - done.length;

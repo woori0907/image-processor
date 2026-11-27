@@ -1,9 +1,8 @@
 # Image Processor
 
-네 가지 도구가 탭으로 나뉘어 있어요.
+세 가지 도구가 탭으로 나뉘어 있어요.
 
 - **이미지 압축**: 고화질 이미지를 웹용으로 자동 최적화 (크기 줄이기 + 가벼운 형식으로 변환)
-- **AI 업스케일**: 작은 이미지를 AI로 선명하게 2배·4배 키우기
 - **이미지 자르기**: 긴 이미지를 가로로 잘라 여러 조각으로 나누기 (버튼 부분만 따로 잘라 링크 걸 때)
 - **썸네일 만들기**: 배너 이미지를 233×158, 216×158 같은 정해진 크기의 썸네일로 만들기 (크기는 바꿀 수 있어요)
 
@@ -19,7 +18,7 @@ ES 모듈(`import`/`export`)을 쓰기 때문에 `index.html`을 더블클릭해
 - **VS Code**: 확장 프로그램 "Live Server" 설치 → `index.html` 우클릭 → *Open with Live Server*
 - **터미널**: 이 폴더에서 `python3 -m http.server 8000` 실행 → 브라우저에서 http://localhost:8000
 
-주소 끝에 `#upscale`, `#slice`, `#thumb`를 붙이면 그 탭이 바로 열려요. (예: http://localhost:8000/#slice)
+주소 끝에 `#slice`나 `#thumb`를 붙이면 그 탭이 바로 열려요. (예: http://localhost:8000/#thumb)
 
 ## 이미지 자르기 사용법
 
@@ -74,11 +73,11 @@ ES 모듈(`import`/`export`)을 쓰기 때문에 `index.html`을 더블클릭해
 
 ```
 image-compressor/
-├── index.html          화면 구조 (탭 4개 + 공용 미리보기 창 + 영역 조정 창)
+├── index.html          화면 구조 (탭 3개 + 미리보기 창 + 영역 조정 창 + 부분 선택 창)
 ├── style.css           디자인
 └── js/
-    ├── main.js         ★ 시작점. 탭별 처리 방법(파이프라인)을 정하고 전체를 연결
-    ├── workspace.js    ★ 탭 하나의 작업 공간 (목록·대기열·버튼). 두 탭이 같이 씀
+    ├── main.js         ★ 시작점. 압축 탭의 처리 방법(파이프라인)을 정하고 전체를 연결
+    ├── workspace.js    ★ 탭 하나의 작업 공간 (목록·대기열·버튼). 압축 탭이 씀
     ├── store.js        이미지 목록 데이터 관리 (탭마다 하나씩 생성)
     ├── formats.js      형식 규칙 (WebP/JPG/PNG, 확장자, 이름 바꾸기)
     ├── utils.js        작은 도우미 함수 (용량 표시, 다운로드 등)
@@ -89,7 +88,6 @@ image-compressor/
     ├── image/          ── 이미지 처리 (화면을 전혀 모름)
     │   ├── canvas.js       기본 도구: 디코딩 · 그리기 · 리사이즈 · 인코딩
     │   ├── compress.js     압축 핵심 로직
-    │   ├── upscale.js      AI 업스케일
     │   ├── slice.js        이미지를 조각으로 자르기
     │   └── thumbnail.js    영역을 잘라 썸네일 크기로 줄이기
     └── ui/             ── 화면 (이미지 처리 방법을 전혀 모름)
@@ -97,7 +95,7 @@ image-compressor/
         ├── settings.js     설정 패널 (탭마다 하나씩 생성)
         ├── dropzone.js     파일 받기 (드래그·클릭)
         ├── list.js         목록 · 요약 영역 그리기
-        ├── preview.js      미리보기 창 (비교 슬라이더, 압축·업스케일 탭 공용)
+        ├── preview.js      미리보기 창 (원본 ↔ 압축본 비교 슬라이더)
         ├── slicer.js       자르기 탭 편집 화면 (선 긋기·끌기·저장)
         ├── thumbnailer.js  썸네일 탭 (이미지 목록·미리보기·저장)
         ├── sizes.js        썸네일 크기 목록 편집
@@ -113,15 +111,15 @@ image-compressor/
   → 나중에 디자인을 완전히 바꿔도 이미지 처리 코드는 그대로 쓸 수 있어요.
 - `ui/` 폴더는 압축이 어떻게 되는지 몰라요. 데이터를 받아 그리고, 클릭되면 알려줄 뿐이에요.
 
-**2. 두 탭의 "같은 부분"과 "다른 부분"을 분리**
+**2. "같은 흐름"과 "처리 방법"을 분리**
 
-두 탭은 *파일 받기 → 목록 → 한 장씩 처리 → 결과 표시 → 선택·삭제·ZIP* 흐름이 완전히 같아요.
-다른 건 **"이미지 한 장을 어떻게 처리하느냐"** 하나뿐이에요.
+압축 탭은 *파일 받기 → 목록 → 한 장씩 처리 → 결과 표시 → 선택·삭제·ZIP* 흐름이에요.
+이 흐름은 어떤 "자동 처리" 탭이든 똑같고, 달라지는 건 **"이미지 한 장을 어떻게 처리하느냐"** 하나뿐이에요.
 
-- 같은 부분 → `workspace.js`에 한 번만 작성
-- 다른 부분 → `main.js`의 `compressPipeline` / `upscalePipeline` 함수로 작성해서 넘겨줌
+- 같은 흐름 → `workspace.js`에 한 번만 작성
+- 처리 방법 → `main.js`의 `compressPipeline` 함수로 작성해서 넘겨줌
 
-세 번째 탭(예: 형식 변환)을 만들고 싶다면, HTML에 패널을 하나 추가하고
+같은 방식의 새 탭(예: 형식 변환)을 만들고 싶다면, HTML에 패널을 하나 추가하고
 `main.js`에 파이프라인 함수 하나만 새로 쓰면 돼요.
 
 **3. 흐름이 다른 탭은 따로**
@@ -150,7 +148,7 @@ image-compressor/
 ## 전체 흐름
 
 ```
- 사용자가 이미지를 넣음 (지금 열린 탭으로)
+ 사용자가 이미지를 넣음 (압축 탭 기준)
         │
         ▼
  ui/dropzone.js ──► workspace.addFiles()
@@ -167,10 +165,6 @@ image-compressor/
                         │   ┌ 압축 탭 ───────────────────────────────┐
                         │   │ image/compress.js  줄이기 + 형식 변환   │
                         │   └────────────────────────────────────────┘
-                        │   ┌ 업스케일 탭 ───────────────────────────┐
-                        │   │ image/upscale.js   AI로 키우기          │
-                        │   │ image/compress.js  형식 변환 (크기 유지) │
-                        │   └────────────────────────────────────────┘
                         │
                         │  store.setResults()    결과 저장
                         ▼  list.showResult()     화면에 표시
@@ -179,7 +173,7 @@ image-compressor/
 
 ## 추천 공부 순서
 
-1. **`js/main.js`**: 두 파이프라인 함수를 보면 각 탭이 "무엇을 하는지" 한눈에 보여요.
+1. **`js/main.js`**: 파이프라인 함수와 탭 연결을 보면 앱 전체 구조가 한눈에 보여요.
 2. **`js/workspace.js`의 `processItem()`**: 파이프라인이 언제, 어떻게 불리는지
 3. **`js/image/canvas.js`**: 브라우저에서 이미지를 다루는 기본 3단계 (디코딩 → 그리기 → 인코딩)
 4. **`js/image/compress.js`**: 용량이 줄어드는 원리
@@ -188,7 +182,6 @@ image-compressor/
 7. **`js/cuts.js` → `js/image/slice.js` → `js/ui/slicer.js`**: 데이터 규칙 → 처리 → 화면 순서로 자르기 기능 따라가기
 8. **`js/crop.js` → `js/image/thumbnail.js` → `js/ui/cropper.js`**: 썸네일 영역 규칙 → 자르고 줄이기 → 끌어서 조정하는 화면
    그다음 `js/region.js` → `js/ui/region-picker.js` → `js/ui/thumbnailer.js`의 `applyRegion()`: 긴 이미지 부분 선택
-9. **`js/image/upscale.js`**: AI 모델을 브라우저에서 돌리는 방법 (가장 어려움)
 
 ## 코드에서 만나는 주요 개념
 
@@ -202,7 +195,7 @@ image-compressor/
 | `<canvas>` | 코드로 그림을 그리는 도화지. 리사이즈·형식 변환에 사용 | `image/canvas.js` |
 | Blob / File | 브라우저 메모리 안의 파일 데이터 | `store.js`, `image/*` |
 | Object URL (`blob:...`) | Blob을 `<img>`에 쓰기 위한 임시 주소. 다 쓰면 해제해야 함 | `store.js` |
-| AbortController | 진행 중인 작업을 중간에 멈추는 표준 도구 | `workspace.js`, `main.js` |
+| AbortController | 진행 중인 작업을 중간에 멈추는 표준 도구 | `workspace.js`, `store.js` |
 | data 속성 | `id` 대신 `data-setting="format"`처럼 표시해서 탭마다 같은 구조를 찾음 | `ui/settings.js`, `workspace.js` |
 | 이벤트 전파 (`stopPropagation`) | 같은 drop 이벤트가 두 번 처리되지 않게 막기 | `ui/dropzone.js` |
 | ARIA 탭 패턴 | 스크린 리더·키보드 사용자도 탭을 쓸 수 있게 | `ui/tabs.js` |
@@ -221,13 +214,9 @@ image-compressor/
 | 끄는 중 저절로 스크롤 | 포인터가 멈춰도 스크롤되도록 rAF로 매 프레임 끝 근처인지 확인 | `ui/region-picker.js` `autoScroll()` |
 | 두 단계 자르기 | 먼저 자른 결과를 "새 원본"처럼 넘기면 다음 단계 코드는 바꿀 필요가 없음 | `ui/thumbnailer.js` `applyRegion()` |
 | `wheel` + `passive: false` | 휠 이벤트에서 페이지 스크롤을 막으려면 미리 알려야 함 | `ui/cropper.js` |
-| 지연 로딩 | 큰 라이브러리는 필요할 때만 불러오기 | `image/upscale.js` |
-| 텐서(tensor) | AI가 다루는 숫자 배열. GPU 메모리라 직접 해제 | `image/upscale.js` |
 
 ## 사용하는 외부 라이브러리
 
 | 라이브러리 | 용도 | 불러오는 시점 |
 |---|---|---|
 | [JSZip](https://stuk.github.io/jszip/) 3.10.1 | ZIP 파일 만들기 | 페이지 열 때 (`index.html`) |
-| [TensorFlow.js](https://www.tensorflow.org/js) 4.11.0 | 브라우저에서 AI 실행 | 업스케일 탭에서 처음 처리할 때 |
-| [UpscalerJS](https://upscalerjs.com/) 1.0.0 + esrgan-medium 모델 | AI 업스케일 | 업스케일 탭에서 처음 처리할 때 |

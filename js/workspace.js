@@ -1,7 +1,7 @@
 /**
  * workspace.js — 탭 하나의 "작업 공간"
  *
- * 압축 탭과 업스케일 탭은 하는 일(처리 방법)만 다르고 나머지는 똑같아요:
+ * "여러 장을 넣으면 알아서 처리하는" 탭은 하는 일(처리 방법)만 다르고 나머지는 똑같아요:
  *   파일 받기 → 목록에 추가 → 한 장씩 처리 → 결과 표시 → 선택·삭제·ZIP
  *
  * 그래서 공통 부분을 이 파일에 한 번만 만들고,
@@ -24,25 +24,24 @@ import { triggerDownload } from './utils.js';
  * @param {import('./ui/settings.js').Settings} settings
  * @param {{signal: AbortSignal, report: (msg: string) => void}} ctx
  *   signal: 삭제되면 중단됨을 알리는 신호 / report: 진행 상황 문구 표시
- * @returns {Promise<{outputs: Omit<import('./store.js').Output,'url'>[], upInfo?: Object}>}
+ * @returns {Promise<{outputs: Omit<import('./store.js').Output,'url'>[]}>}
  */
 
 /**
  * @param {HTMLElement} root 탭 패널 요소 (#panel-compress 등)
  * @param {Object} config
- * @param {'compress'|'upscale'} config.mode  화면 표시 방식
+ * @param {string} config.mode               탭 이름 (설정을 기억할 때 이름표로 씀)
  * @param {ProcessFn} config.process          이미지 한 장을 처리하는 방법
  * @param {string} config.zipName             ZIP 파일 이름
- * @param {string} [config.origLabel]         미리보기에서 원본 쪽 이름표
  * @returns {{addFiles: (files: FileList|File[]) => void}}
  */
-export function createWorkspace(root, { mode, process, zipName, origLabel }) {
+export function createWorkspace(root, { mode, process, zipName }) {
   const store = createStore(); // 이 탭만의 목록
   const settings = createSettings(root, `image-tools:${mode}:format`);
-  const bar = createSummaryBar(root, mode);
+  const bar = createSummaryBar(root);
   const listEl = root.querySelector('.list');
 
-  const preview = (item) => openPreview(item, { origLabel });
+  const preview = (item) => openPreview(item);
   const rowHandlers = { onPreview: preview, onToggle: setSelected };
 
   // ─────────────────────────────────────────────
@@ -71,7 +70,7 @@ export function createWorkspace(root, { mode, process, zipName, origLabel }) {
    *   queue = 작업1.then(작업2).then(작업3) ...
    *
    * .catch를 붙여서 하나가 실패해도 뒤 작업은 계속 진행돼요.
-   * 탭마다 대기열이 따로라서, 업스케일이 오래 걸려도 압축 탭은 기다리지 않아요.
+   * 탭마다 대기열이 따로라서, 한 탭의 작업이 오래 걸려도 다른 탭은 기다리지 않아요.
    */
   let queue = Promise.resolve();
   function enqueue(item) {
@@ -88,16 +87,15 @@ export function createWorkspace(root, { mode, process, zipName, origLabel }) {
     // 사용자가 삭제하면 store.remove()가 abort()를 불러서 처리가 멈춰요.
     item.abort = new AbortController();
     try {
-      const { outputs, upInfo } = await process(item, settings.read(item.file), {
+      const { outputs } = await process(item, settings.read(item.file), {
         signal: item.abort.signal,
         report: (msg) => showStatus(item, msg),
       });
       // await 하는 동안 시간이 흘렀으니, 그 사이 삭제됐는지 다시 확인
       if (!store.has(item)) return;
 
-      item.upInfo = upInfo;
       store.setResults(item, outputs);
-      showResult(item, mode, preview);
+      showResult(item, preview);
     } catch (err) {
       if (!store.has(item)) return; // 삭제 때문에 중단된 거라 에러 아님
       // userMessage가 있으면 예상한 상황(너무 큰 이미지 등) → 경고만, 없으면 진짜 버그 → 에러

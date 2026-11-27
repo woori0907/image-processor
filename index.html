@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Image Processor</title>
-  <meta name="description" content="이미지를 웹용으로 압축하거나 AI로 선명하게 키워요. 모든 처리는 브라우저에서 이루어집니다." />
+  <meta name="description" content="이미지를 웹용으로 압축하고, 자르고, 썸네일로 만들어요. 모든 처리는 브라우저에서 이루어집니다." />
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232f6fed'/%3E%3Cpath d='M7 23l6-8 4 5 3-4 5 7z' fill='%23fff'/%3E%3Ccircle cx='21' cy='10' r='3' fill='%23fff'/%3E%3C/svg%3E" />
   <link rel="stylesheet" href="style.css" />
 </head>
@@ -23,7 +23,6 @@
     -->
     <div class="tabs" role="tablist" aria-label="도구 선택">
       <button class="tab" role="tab" type="button" id="tab-compress" data-tab="compress" aria-controls="panel-compress" aria-selected="true">이미지 압축</button>
-      <button class="tab" role="tab" type="button" id="tab-upscale" data-tab="upscale" aria-controls="panel-upscale" aria-selected="false" tabindex="-1">AI 업스케일 <em class="badge">실험 기능</em></button>
       <button class="tab" role="tab" type="button" id="tab-slice" data-tab="slice" aria-controls="panel-slice" aria-selected="false" tabindex="-1">이미지 자르기</button>
       <button class="tab" role="tab" type="button" id="tab-thumb" data-tab="thumb" aria-controls="panel-thumb" aria-selected="false" tabindex="-1">썸네일 만들기</button>
     </div>
@@ -79,35 +78,6 @@
 
       <ul class="list"></ul>
     </section>
-
-    <!-- ───────────── 업스케일 탭 ───────────── -->
-    <section class="panel" id="panel-upscale" role="tabpanel" aria-labelledby="tab-upscale" hidden>
-      <p class="panel-intro">작은 이미지를 AI로 선명하게 키워요. 처음 사용할 때 AI 파일(약 4MB)을 한 번 내려받아요.</p>
-
-      <section class="settings" aria-label="업스케일 설정">
-        <div class="field field-full">
-          <span>배율</span>
-          <div class="seg" role="radiogroup" aria-label="배율" data-setting="scale">
-            <label><input type="radio" name="u-scale" value="2" checked /><span>2배</span></label>
-            <label><input type="radio" name="u-scale" value="4" /><span>4배</span></label>
-          </div>
-          <small class="hint" data-hint-for="scale"></small>
-        </div>
-        <div class="field field-full">
-          <span>저장 형식</span>
-          <div class="seg" role="radiogroup" aria-label="저장 형식" data-setting="format">
-            <label><input type="radio" name="u-format" value="webp" checked /><span>WebP</span></label>
-            <label><input type="radio" name="u-format" value="jpeg" /><span>JPG</span></label>
-            <label><input type="radio" name="u-format" value="both" /><span>WebP + JPG</span></label>
-            <label><input type="radio" name="u-format" value="png" /><span>PNG</span></label>
-          </div>
-          <small class="hint" data-hint-for="format"></small>
-        </div>
-        <label class="field field-full" data-setting="quality">
-          <span>품질 <output>90</output></span>
-          <input type="range" min="40" max="100" value="90" />
-        </label>
-      </section>
 
       <label class="drop" tabindex="0">
         <input type="file" accept="image/*" multiple hidden />
@@ -230,7 +200,7 @@
     </section>
   </main>
 
-  <!-- 미리보기 창은 압축·업스케일 탭이 함께 써요 -->
+  <!-- 압축 탭의 미리보기 창 (원본 ↔ 압축본 비교) -->
   <dialog id="preview" class="preview" aria-labelledby="pvTitle">
     <div class="pv-head">
       <div id="pvTitle" class="pv-title"></div>
