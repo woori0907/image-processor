@@ -16,6 +16,11 @@
  *             ├── ui/slicer.js  자르기 탭 (한 장 편집 방식이라 workspace를 안 씀)
  *             │      ├── cuts.js            자르는 선 데이터
  *             │      └── image/slice.js     실제로 자르기
+ *             ├── ui/thumbnailer.js  썸네일 탭 (영역을 사람이 조정할 수 있어서 workspace를 안 씀)
+ *             │      ├── ui/sizes.js        크기 목록 편집
+ *             │      ├── ui/cropper.js      영역 조정 창
+ *             │      ├── crop.js            가져올 영역 데이터
+ *             │      └── image/thumbnail.js 실제로 잘라서 줄이기
  *             └── ui/tabs.js · preview.js
  *
  * 처음 공부할 때는 아래 두 파이프라인(compressPipeline, upscalePipeline)을 먼저 읽고,
@@ -27,6 +32,7 @@ import { initPreview } from './ui/preview.js';
 import { compress } from './image/compress.js';
 import { upscaleImage, MAX_OUTPUT } from './image/upscale.js';
 import { createSlicer } from './ui/slicer.js';
+import { createThumbnailer } from './ui/thumbnailer.js';
 
 // ─────────────────────────────────────────────
 // 1. 파이프라인: 탭마다 이미지 한 장을 처리하는 방법
@@ -81,6 +87,7 @@ const workspaces = {
   // 아래 "아무 데나 놓기 · 붙여넣기" 코드가 탭 종류를 몰라도 똑같이 동작해요.
   // (이렇게 "모양(쓰는 법)만 같으면 같은 자리에 끼울 수 있다"는 걸 덕 타이핑이라고 해요)
   slice: createSlicer(document.getElementById('panel-slice')),
+  thumb: createThumbnailer(document.getElementById('panel-thumb')),
 };
 
 // ─────────────────────────────────────────────
