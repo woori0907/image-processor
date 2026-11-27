@@ -1,5 +1,5 @@
 /**
- * ui/settings.js — 설정 패널 (형식 · 배율 · 최대 크기 · 품질)
+ * ui/settings.js — 설정 패널 (형식 · 최대 크기 · 품질)
  *
  * 역할은 두 가지예요:
  *   1. 설정이 바뀔 때 화면 반응 (안내 문구 바꾸기, 품질 숫자 표시 등)
@@ -7,8 +7,8 @@
  *
  * ── 탭마다 설정이 다른데 어떻게 한 파일로 처리할까요? ──
  * HTML에 data-setting="format"처럼 "이건 어떤 설정인지" 표시를 해두고,
- * 탭(root) 안에서 그 표시를 찾아요. 업스케일 탭에는 maxWidth가 없고,
- * 압축 탭에는 scale이 없지만, 없으면 기본값을 쓰면 돼요.
+ * 탭(root) 안에서 그 표시를 찾아요. 자르기 탭에는 maxWidth가 없지만, 없으면 기본값을 쓰면 돼요.
+ * (썸네일 탭처럼 품질 칸이 없는 탭도 있어요. 그때 quality는 null이라 쓰는 쪽에서 정해요)
  * 그래서 id 대신 data 속성을 써요. (id는 페이지 전체에서 하나여야 해서 탭마다 쓸 수 없어요)
  */
 import { typesFor } from '../formats.js';
@@ -21,10 +21,6 @@ const HINTS = {
     png: '무손실이라 화질은 그대로지만 용량이 커요. 로고·아이콘 등 투명 배경이 필요한 이미지에 적합해요.',
     original: '들어온 형식 그대로 압축해요. (GIF·HEIC 등은 JPG로 저장)',
   },
-  scale: {
-    2: '가로·세로 2배로 키워요. 기기 성능에 따라 장당 수 초~수십 초 걸려요.',
-    4: '가로·세로 4배로 키워요. 2배보다 훨씬 오래 걸려요. 결과가 4096px를 넘으면 2배로 자동 조정해요.',
-  },
 };
 
 /**
@@ -36,15 +32,13 @@ const HINTS = {
  * @typedef {Object} Settings
  * @property {string[]} types    만들 형식들 ('image/webp' 등)
  * @property {number}   maxWidth 최대 가로 크기 (0 = 제한 없음)
- * @property {number}   quality  0~1
- * @property {number}   upscale  업스케일 배율 (0 = 안 함)
+ * @property {number|null} quality 0~1 (품질 칸이 없는 탭이면 null)
  */
 export function createSettings(root, storageKey) {
   const radios = (name) => [...root.querySelectorAll(`[data-setting="${name}"] input[type="radio"]`)];
   const formatRadios = radios('format');
-  const scaleRadios = radios('scale');
   const maxWidthSel = root.querySelector('[data-setting="maxWidth"] select'); // 없을 수도 있음
-  const qualityInput = root.querySelector('[data-setting="quality"] input');
+  const qualityInput = root.querySelector('[data-setting="quality"] input'); // 없을 수도 있음
   const qualityOut = root.querySelector('[data-setting="quality"] output');
 
   const checkedValue = (list) => list.find((r) => r.checked)?.value;
@@ -68,10 +62,9 @@ export function createSettings(root, storageKey) {
   bindHint('format', formatRadios, () => {
     try { localStorage.setItem(storageKey, checkedValue(formatRadios)); } catch (_) { /* 무시 */ }
   });
-  bindHint('scale', scaleRadios);
 
   // 'input' 이벤트는 슬라이더를 끄는 동안 계속 발생해요 ('change'는 손을 뗄 때 한 번)
-  qualityInput.addEventListener('input', () => { qualityOut.textContent = qualityInput.value; });
+  qualityInput?.addEventListener('input', () => { qualityOut.textContent = qualityInput.value; });
 
   return {
     /**
@@ -83,8 +76,7 @@ export function createSettings(root, storageKey) {
       return {
         types: typesFor(checkedValue(formatRadios), file.type),
         maxWidth: maxWidthSel ? Number(maxWidthSel.value) : 0,
-        quality: Number(qualityInput.value) / 100, // 슬라이더 40~100 → 0.4~1.0
-        upscale: scaleRadios.length ? Number(checkedValue(scaleRadios)) : 0,
+        quality: qualityInput ? Number(qualityInput.value) / 100 : null, // 슬라이더 40~100 → 0.4~1.0
       };
     },
   };

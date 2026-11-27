@@ -11,15 +11,13 @@ import { loadBitmap, draw, resize, toBlob } from './canvas.js';
 import { renameFile } from '../formats.js';
 
 /**
- * @param {File} file   원본 파일 (이름·형식·용량 비교용)
- * @param {Blob} source 실제로 처리할 이미지 (업스케일했으면 그 결과, 아니면 원본)
+ * @param {File} file 원본 파일
  * @param {{types:string[], maxWidth:number, quality:number}} settings
- * @param {boolean} upscaled  업스케일한 이미지인지
  * @returns {Promise<Omit<import('../store.js').Output, 'url'>[]>}
  */
-export async function compress(file, source, { types, maxWidth, quality }, upscaled) {
+export async function compress(file, { types, maxWidth, quality }) {
   // ① 디코딩
-  const bitmap = await loadBitmap(source);
+  const bitmap = await loadBitmap(file);
 
   // ② 목표 크기 계산 (가로 기준, 비율 유지). 0이면 '원본 크기'
   const scale = maxWidth && bitmap.width > maxWidth ? maxWidth / bitmap.width : 1;
@@ -52,7 +50,7 @@ export async function compress(file, source, { types, maxWidth, quality }, upsca
 
     // 이미 잘 압축된 파일은 다시 압축하면 오히려 커질 수 있어요.
     // 크기·형식이 그대로인데 커졌다면 원본을 그대로 쓰는 게 이득이에요.
-    if (!upscaled && scale === 1 && type === file.type && blob.size >= file.size) blob = file;
+    if (scale === 1 && type === file.type && blob.size >= file.size) blob = file;
 
     outputs.push({
       type, blob, width: w, height: h,

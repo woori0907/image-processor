@@ -6,9 +6,9 @@
  * 이렇게 하면 "목록이 언제, 어디서 바뀌었지?"를 추적하기 쉬워져요.
  *
  * ── 왜 createStore() 함수로 만들까요? (팩토리 패턴) ──
- * 압축 탭과 업스케일 탭은 목록을 따로 가져야 해요.
+ * workspace를 쓰는 탭은 저마다 목록을 따로 가져야 해요.
  * createStore()를 부를 때마다 새로운 items 배열이 생겨서,
- * 두 탭이 서로의 목록을 건드리지 않아요.
+ * 탭끼리 서로의 목록을 건드리지 않아요.
  * (함수 안의 변수를 안쪽 함수들이 기억하는 것을 "클로저(closure)"라고 해요)
  *
  * ── Object URL 이야기 ──
@@ -38,8 +38,6 @@
  * @property {string}  origUrl    원본 미리보기용 blob: 주소
  * @property {HTMLLIElement} el   화면에 그려진 줄 (ui/list.js가 만듦)
  * @property {Output[]} [results] 처리 결과 (끝나면 생김)
- * @property {{blob:Blob, factor:number, note:string}} [upInfo]  업스케일 정보 (업스케일 탭)
- * @property {{blob:Blob, factor:number, note:string}} [upCache] 업스케일 결과 캐시 (다시 처리할 때 재사용)
  * @property {AbortController|null} [abort] 처리 중단용 (삭제 시 사용)
  * @property {boolean} [selected]   체크박스 선택 여부
  * @property {boolean} [origBroken] 브라우저가 원본을 표시하지 못하는지 (예: Chrome의 HEIC)

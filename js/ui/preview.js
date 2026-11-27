@@ -36,22 +36,19 @@ const pv = {
 
 /**
  * 미리보기 창의 상태. 창이 닫혀 있으면 null.
- * @type {{item: import('../store.js').Item, idx: number, pos: number, origLabel: string} | null}
+ * @type {{item: import('../store.js').Item, idx: number, pos: number} | null}
  *   idx: 결과 중 몇 번째 형식을 보는지 (WebP + JPG일 때 0 또는 1)
  *   pos: 슬라이더 위치 (0~100%)
- *   origLabel: 비교할 때 왼쪽(원본)에 붙는 이름표
  */
 let state = null;
 
 /**
- * 미리보기 열기 (두 탭이 같은 창을 함께 써요)
+ * 미리보기 열기
  * @param {import('../store.js').Item} item
- * @param {{origLabel?: string}} [opts]
- *   업스케일 탭에서는 원본이 결과 크기로 "그냥 늘어나 보이는" 거라 이름표를 다르게 붙여요
  */
-export function openPreview(item, { origLabel = '원본' } = {}) {
+export function openPreview(item) {
   if (!item.results) return;
-  state = { item, idx: 0, pos: 50, origLabel };
+  state = { item, idx: 0, pos: 50 };
   if (!pv.dialog.open) pv.dialog.showModal();
   render();
 }
@@ -95,7 +92,7 @@ function render() {
   pv.base.src = mode === 'result' ? r.url : item.origUrl;
   pv.top.src = r.url;
   pv.top.hidden = pv.handle.hidden = pv.tagL.hidden = pv.tagR.hidden = !compare;
-  pv.tagL.textContent = state.origLabel;
+  pv.tagL.textContent = '원본';
   pv.tagR.textContent = LABEL[r.type];
   pv.frame.classList.toggle('compare', compare);
   pv.frame.classList.toggle('actual', pv.actual.checked);

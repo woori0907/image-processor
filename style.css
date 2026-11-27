@@ -92,17 +92,6 @@ body {
 .field output { color: var(--text); font-weight: 600; margin-left: 4px; }
 .field-full { grid-column: 1 / -1; }
 .hint { font-size: 13px; color: var(--muted); }
-.badge {
-  font-style: normal;
-  font-size: 11px;
-  font-weight: 700;
-  padding: 1px 6px;
-  margin-left: 4px;
-  border-radius: 999px;
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-.tag-ai { color: var(--accent); font-weight: 700; }
 
 .seg { display: flex; flex-wrap: wrap; gap: 6px; }
 .seg label { cursor: pointer; }
@@ -477,4 +466,294 @@ input[type="range"] { accent-color: var(--accent); margin-top: 10px; }
 @media (max-width: 640px) {
   .slicer { grid-template-columns: 1fr; }
   .sl-side { position: static; max-height: none; order: -1; } /* 휴대폰에서는 목록을 이미지 위에 */
+}
+
+/* ---------- 썸네일 만들기 탭 ---------- */
+
+/* 크기 목록: [233] × [158] px [×]  [+ 크기 추가] */
+.sz-list { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.sz-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 4px 4px 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--text);
+}
+.sz-row input {
+  width: 64px;
+  padding: 4px 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--text);
+  font: inherit;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.sz-x, .sz-unit { color: var(--muted); font-size: 13px; }
+.sz-del {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+}
+.sz-del:hover:not(:disabled) { background: var(--line); color: var(--text); }
+.sz-del:disabled { opacity: .3; cursor: default; }
+.sz-btn { padding: 6px 12px; border-radius: 999px; }
+
+.th-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  margin: 20px 0 12px;
+}
+.th-count { font-weight: 600; }
+.th-status { flex-basis: 100%; margin: 0; font-size: 13px; color: var(--good); }
+.th-status:empty { display: none; }
+.th-status.error { color: var(--bad); }
+
+.th-list.busy .th-item { opacity: .7; pointer-events: none; }
+.th-item {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 14px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+}
+.th-head { display: flex; align-items: center; gap: 12px; }
+.th-head .meta { flex: 1; }
+
+/* 썸네일은 실제 크기 그대로 보여줘요 (좁은 화면에서만 줄어듦) */
+.th-outs { display: flex; flex-wrap: wrap; gap: 16px; }
+.th-out { margin: 0; display: flex; flex-direction: column; gap: 6px; max-width: 100%; }
+.th-edit {
+  position: relative;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  line-height: 0;
+  cursor: pointer;
+}
+.th-edit canvas {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+  outline: 1px solid var(--line);
+  /* 투명 PNG도 알아볼 수 있게 체크무늬 */
+  background-color: var(--bg);
+  background-image: conic-gradient(var(--line) 25%, transparent 0 50%, var(--line) 0 75%, transparent 0);
+  background-size: 16px 16px;
+}
+/* 마우스를 올리면 "영역 조정" 안내 */
+.th-edit::after {
+  content: "영역 조정";
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgb(0 0 0 / .65);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.5;
+  opacity: 0;
+  transition: opacity .15s;
+}
+.th-edit:hover::after, .th-edit:focus-visible::after { opacity: 1; }
+.th-edit:hover canvas { outline: 2px solid var(--accent); }
+.th-edit:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.th-cap { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.th-badge { padding: 0 6px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-weight: 700; font-size: 12px; }
+.th-warn { color: var(--bad); }
+
+/* ---------- 영역 조정 창 ---------- */
+.cropper {
+  width: min(1200px, 96vw);
+  height: 92vh;
+  max-width: none;
+  max-height: none;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--card);
+  color: var(--text);
+  overflow: hidden;
+}
+.cropper[open] { display: flex; flex-direction: column; }
+.cropper::backdrop { background: rgb(0 0 0 / .65); }
+
+.cr-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+}
+.cr-stage {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background-color: var(--bg);
+  background-image: conic-gradient(var(--line) 25%, transparent 0 50%, var(--line) 0 75%, transparent 0);
+  background-size: 20px 20px;
+}
+/* 크기(width/height)는 cropper.js의 fitFrame()이 정해요 */
+.cr-frame {
+  position: relative;
+  flex: none;
+  cursor: crosshair;
+  touch-action: none; /* 터치로 끌 때 화면이 같이 스크롤·확대되지 않게 */
+  user-select: none;
+  -webkit-user-select: none;
+}
+.cr-img { display: block; width: 100%; height: 100%; pointer-events: none; -webkit-user-drag: none; }
+
+/*
+  바깥 어둡게: 구멍(.cr-hole)에 아주 큰 그림자를 줘서 구멍 바깥 전체를 덮고,
+  .cr-shade의 overflow: hidden으로 이미지 밖으로 번진 그림자는 잘라요.
+  상자(.cr-box)는 이 층 밖에 따로 있어서, 이미지 끝에 붙어도 모서리 손잡이가 잘리지 않아요.
+*/
+.cr-shade { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+.cr-hole { position: absolute; box-shadow: 0 0 0 9999px rgb(0 0 0 / .55); }
+.cr-box {
+  position: absolute;
+  cursor: move;
+  outline: 2px solid #fff;
+}
+.cr-box:focus-visible { outline: 3px solid var(--accent); }
+/* 삼등분 안내선: 끄는 동안만 보여줘요 (구도 잡을 때 참고) */
+.cr-box::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(to right, transparent calc(100% / 3 - .5px), rgb(255 255 255 / .45) 0 calc(100% / 3 + .5px), transparent 0 calc(200% / 3 - .5px), rgb(255 255 255 / .45) 0 calc(200% / 3 + .5px), transparent 0),
+    linear-gradient(to bottom, transparent calc(100% / 3 - .5px), rgb(255 255 255 / .45) 0 calc(100% / 3 + .5px), transparent 0 calc(200% / 3 - .5px), rgb(255 255 255 / .45) 0 calc(200% / 3 + .5px), transparent 0);
+  opacity: 0;
+  transition: opacity .15s;
+  pointer-events: none;
+}
+.cr-frame.dragging .cr-box::before { opacity: 1; }
+
+/* 모서리 손잡이: 보이는 건 작은 네모지만 잡는 영역은 넉넉하게 */
+.cr-handle {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  margin: -11px;
+}
+.cr-handle::after {
+  content: "";
+  position: absolute;
+  inset: 6px;
+  border-radius: 2px;
+  background: #fff;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / .4);
+}
+.cr-handle[data-corner="nw"] { left: 0; top: 0; cursor: nwse-resize; }
+.cr-handle[data-corner="ne"] { right: 0; top: 0; cursor: nesw-resize; }
+.cr-handle[data-corner="sw"] { left: 0; bottom: 0; cursor: nesw-resize; }
+.cr-handle[data-corner="se"] { right: 0; bottom: 0; cursor: nwse-resize; }
+
+.cr-side {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  border-left: 1px solid var(--line);
+  overflow: auto;
+}
+.cr-preview-wrap { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--muted); }
+.cr-preview {
+  align-self: flex-start;
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+  outline: 1px solid var(--line);
+}
+.cr-zoom input:disabled { opacity: .4; }
+.cr-info { margin: 0; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.cr-warn { margin: 0; font-size: 13px; color: var(--bad); }
+.cr-side .sl-help { margin-top: auto; } /* 도움말은 아래쪽으로 */
+
+@media (max-width: 640px) {
+  .cropper { width: 100vw; height: 100dvh; border-radius: 0; border: 0; }
+  .cr-body { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) auto; }
+  .cr-side { border-left: 0; border-top: 1px solid var(--line); max-height: 45dvh; }
+  .cr-stage { padding: 12px; }
+}
+
+/* ---------- 사용할 부분 선택 창 (영역 조정 창의 스타일을 같이 써요) ---------- */
+.rp-stage {
+  overflow: auto;        /* 긴 이미지는 세로로 스크롤 */
+  align-items: flex-start;
+  overscroll-behavior: contain; /* 끝까지 스크롤해도 뒤쪽 페이지가 같이 스크롤되지 않게 */
+}
+/* margin: auto — 이미지가 창보다 작으면 가운데, 크면 위에서부터 (align-items: center는 위가 잘려요) */
+.rp-frame { margin: auto; }
+.rp-box {
+  position: absolute;
+  cursor: move;
+  outline: 2px solid #fff;
+}
+.rp-box.is-full { cursor: crosshair; } /* 전체 선택 상태에선 어디서 끌든 새로 그리기 */
+.rp-box:focus-visible { outline: 3px solid var(--accent); }
+
+/* 변 손잡이: 변 전체를 잡을 수 있게 길게, 보이는 건 가운데 작은 막대 */
+.rp-handle { position: absolute; }
+.rp-handle[data-edge="n"], .rp-handle[data-edge="s"] { left: 12px; right: 12px; height: 16px; cursor: ns-resize; }
+.rp-handle[data-edge="w"], .rp-handle[data-edge="e"] { top: 12px; bottom: 12px; width: 16px; cursor: ew-resize; }
+.rp-handle[data-edge="n"] { top: -8px; }
+.rp-handle[data-edge="s"] { bottom: -8px; }
+.rp-handle[data-edge="w"] { left: -8px; }
+.rp-handle[data-edge="e"] { right: -8px; }
+.rp-handle::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  border-radius: 2px;
+  background: #fff;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / .4);
+}
+.rp-handle[data-edge="n"]::after, .rp-handle[data-edge="s"]::after { width: 28px; height: 5px; }
+.rp-handle[data-edge="w"]::after, .rp-handle[data-edge="e"]::after { width: 5px; height: 28px; }
+.rp-handle.corner { width: 22px; height: 22px; }
+.rp-handle.corner::after { width: 10px; height: 10px; }
+.rp-handle[data-edge="nw"] { left: -11px; top: -11px; cursor: nwse-resize; }
+.rp-handle[data-edge="ne"] { right: -11px; top: -11px; cursor: nesw-resize; }
+.rp-handle[data-edge="sw"] { left: -11px; bottom: -11px; cursor: nesw-resize; }
+.rp-handle[data-edge="se"] { right: -11px; bottom: -11px; cursor: nwse-resize; }
+/* 전체 선택 상태에선 손잡이를 숨겨요 (이미지 끝에 붙어 있어 헷갈리고, 새로 그리는 게 기본이라) */
+.rp-box.is-full .rp-handle { display: none; }
+.rp-info { margin: 0; font-size: 14px; font-variant-numeric: tabular-nums; }
+
+/* 긴 이미지 안내 */
+.th-hint {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  color: var(--text);
+  font-size: 13px;
 }
