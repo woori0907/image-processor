@@ -1,0 +1,404 @@
+/**
+ * ui/slicer.js — "이미지 자르기" 탭의 편집 화면
+ *
+ * 압축·업스케일 탭은 "여러 장을 넣으면 알아서 처리"하는 방식이라 workspace.js를 같이 쓰지만,
+ * 자르기는 "한 장을 열어 사람이 선을 긋는" 편집 방식이라 흐름이 달라서 따로 만들었어요.
+ *
+ * ── 화면 구성 ──
+ *   왼쪽: 이미지 + 그 위에 겹친 레이어 3개
+ *         · .sl-pieces-layer  조각 번호·버튼 표시 (클릭을 통과시킴)
+ *         · .sl-lines         자르는 선 (끌기·키보드 조작)
+ *         · .sl-guide         마우스 위치를 따라다니는 점선 (여기를 누르면 선이 생긴다는 안내)
+ *   오른쪽: 조각 목록(버튼 표시 체크, 선 위치 숫자 입력) + 저장 버튼
+ *
+ * ── 좌표 계산의 핵심 ──
+ * 화면에는 이미지가 줄어들어 보이지만, 선 위치는 항상 "원본 px"로 저장해요.
+ *   · 화면 → 원본:  (클릭한 y - 이미지 윗변) / 화면에 보이는 높이 × 원본 높이
+ *   · 원본 → 화면:  CSS top을 %로 (y / 원본 높이 × 100%)
+ * %를 쓰면 창 크기가 바뀌어도 다시 계산할 필요가 없어요.
+ *
+ * ── 상태 → render() ──
+ * 선을 추가·이동·삭제하면 데이터(cuts.js)만 고치고 render()를 불러 화면 전체를 다시 그려요.
+ * (preview.js와 같은 패턴)
+ *
+ * @param {HTMLElement} root 탭 패널 요소
+ * @returns {{addFiles: (files: FileList|File[]) => void}}
+ *   workspace.js와 같은 이름의 addFiles를 돌려줘서, main.js가 탭 종류를 몰라도
+ *   "아무 데나 놓기·붙여넣기"를 똑같이 연결할 수 있어요.
+ */
+import { initDropzone } from './dropzone.js';
+import { createSettings } from './settings.js';
+import { createCuts } from '../cuts.js';
+import { loadBitmap } from '../image/canvas.js';
+import { slicePieces } from '../image/slice.js';
+import { makeZip } from '../zip.js';
+import { formatBytes, triggerDownload } from '../utils.js';
+
+export function createSlicer(root) {
+  const $ = (sel) => root.querySelector(sel);
+  const settings = createSettings(root, 'slice-format'); // 형식·품질 패널은 다른 탭과 같은 코드
+  const drop = $('.drop');
+  const editor = $('.slicer');
+  const frame = $('.sl-frame');
+  const img = $('.sl-img');
+  const piecesLayer = $('.sl-pieces-layer');
+  const linesLayer = $('.sl-lines');
+  const guide = $('.sl-guide');
+  const guideLabel = guide.querySelector('span');
+  const nameEl = $('.sl-name');
+  const sizeEl = $('.sl-size');
+  const listEl = $('.sl-list');
+  const statusEl = $('.sl-status');
+  const saveBtn = $('[data-action="save"]');
+  const resetBtn = $('[data-action="reset"]');
+  const closeBtn = $('[data-action="close"]');
+
+  /** 지금 열린 이미지 { file, url, width, height, cuts }. 없으면 null */
+  let doc = null;
+  /** 저장 중이면 true (그동안 다른 조작을 막아요) */
+  let busy = false;
+  /** 끌고 있는 선의 순번. 안 끌면 null */
+  let dragIndex = null;
+  /** 화면에 있는 선 요소들. 매번 새로 만들지 않고 재사용해요 (아래 renderLines 설명 참고) */
+  const lineEls = [];
+
+  initDropzone(root, addFiles);
+
+  // ─────────────────────────────────────────────
+  // 열기 · 닫기
+  // ─────────────────────────────────────────────
+
+  async function addFiles(files) {
+    const file = [...files].find((f) => f.type.startsWith('image/')); // 한 번에 한 장만
+    if (!file || busy) return;
+    if (doc && doc.cuts.list().length && !confirm('지금 자르던 이미지를 닫고 새 이미지를 열까요?')) return;
+
+    // 원본 크기(px)를 정확히 알기 위해 한 번 풀어 봐요.
+    // (휴대폰 사진은 EXIF 회전 때문에 파일 속 크기와 실제 보이는 크기가 다를 수 있어요)
+    let width, height;
+    try {
+      const bmp = await loadBitmap(file);
+      ({ width, height } = bmp);
+      bmp.close?.();
+    } catch (_) {
+      alert('이미지를 열 수 없어요. JPG · PNG · WebP 파일인지 확인해 주세요.');
+      return;
+    }
+
+    close();
+    doc = { file, url: URL.createObjectURL(file), width, height, cuts: createCuts(height) };
+    img.src = doc.url;
+    // 작은 이미지를 억지로 늘려 보여주지 않게, 원본 가로보다 넓어지지 않도록
+    frame.style.maxWidth = `${width}px`;
+    nameEl.textContent = file.name;
+    sizeEl.textContent = `${width} × ${height}px · ${formatBytes(file.size)}`;
+    drop.hidden = true;
+    editor.hidden = false;
+    setStatus('');
+    render();
+  }
+
+  function close() {
+    if (doc) URL.revokeObjectURL(doc.url); // 다 쓴 임시 주소 해제 (store.js와 같은 이유)
+    doc = null;
+    dragIndex = null;
+    img.removeAttribute('src');
+    lineEls.splice(0).forEach((el) => el.remove());
+    piecesLayer.replaceChildren();
+    listEl.replaceChildren();
+    editor.hidden = true;
+    drop.hidden = false;
+  }
+
+  // ─────────────────────────────────────────────
+  // 좌표 도우미
+  // ─────────────────────────────────────────────
+
+  /** 마우스/터치 이벤트 → 원본 이미지 기준 y(px) */
+  function yFromEvent(e) {
+    const r = frame.getBoundingClientRect();
+    const y = Math.round(((e.clientY - r.top) / r.height) * doc.height);
+    return Math.min(doc.height, Math.max(0, y));
+  }
+
+  /** 원본 y(px) → CSS top 값(%) */
+  const pct = (y) => `${(y / doc.height) * 100}%`;
+
+  // ─────────────────────────────────────────────
+  // 이미지 위 조작: 클릭하면 선 추가, 마우스를 따라 안내선 표시
+  // ─────────────────────────────────────────────
+
+  frame.addEventListener('click', (e) => {
+    if (!doc || busy || e.target.closest('.sl-cut')) return; // 선 자체를 누른 건 무시
+    const k = doc.cuts.add(yFromEvent(e));
+    if (k < 0) return;
+    render();
+    // 방금 만든 선에 포커스 → 바로 ↑↓ 키로 미세 조정 가능
+    lineEls[k].focus({ preventScroll: true });
+  });
+
+  frame.addEventListener('pointermove', (e) => {
+    if (!doc || dragIndex !== null || e.target.closest('.sl-cut')) {
+      guide.hidden = true;
+      return;
+    }
+    const y = yFromEvent(e);
+    guide.style.top = pct(y);
+    guideLabel.textContent = `${y}px`;
+    guide.hidden = false;
+  });
+  frame.addEventListener('pointerleave', () => { guide.hidden = true; });
+
+  // ─────────────────────────────────────────────
+  // 자르는 선 하나 만들기 (끌기 · 키보드 · 삭제)
+  // ─────────────────────────────────────────────
+
+  function makeLine() {
+    const el = document.createElement('div');
+    el.className = 'sl-cut';
+    el.tabIndex = 0; // Tab 키로 선택할 수 있게
+    // 스크린 리더에게 "위아래로 움직이는 조절기"라고 알려줘요 (aria-valuenow는 renderLines에서)
+    el.setAttribute('role', 'slider');
+    el.setAttribute('aria-orientation', 'vertical');
+    el.innerHTML = '<span class="sl-cut-tag"><output></output><button type="button" class="sl-del" aria-label="이 선 삭제">×</button></span>';
+
+    const index = () => Number(el.dataset.index);
+
+    // 끌기: setPointerCapture를 하면 마우스가 선 밖으로 빠르게 벗어나도 계속 이 선이 이벤트를 받아요
+    el.addEventListener('pointerdown', (e) => {
+      if (busy || e.target.closest('.sl-del')) return;
+      e.preventDefault(); // 글자 선택·이미지 끌기 같은 브라우저 기본 동작 막기
+      el.setPointerCapture(e.pointerId);
+      el.focus({ preventScroll: true });
+      dragIndex = index();
+      el.classList.add('dragging');
+      guide.hidden = true;
+    });
+    el.addEventListener('pointermove', (e) => {
+      if (dragIndex === null) return;
+      doc.cuts.move(dragIndex, yFromEvent(e));
+      render();
+    });
+    const endDrag = () => {
+      dragIndex = null;
+      el.classList.remove('dragging');
+    };
+    el.addEventListener('pointerup', endDrag);
+    el.addEventListener('pointercancel', endDrag);
+    // 끌기를 마친 뒤 생기는 click이 이미지(frame)까지 올라가 선을 또 만들지 않게
+    el.addEventListener('click', (e) => e.stopPropagation());
+
+    // 키보드: ↑↓ 1px, Shift+↑↓ 10px, Delete/Backspace 삭제
+    el.addEventListener('keydown', (e) => {
+      if (busy) return;
+      const step = e.shiftKey ? 10 : 1;
+      const k = index();
+      const y = doc.cuts.list()[k];
+      if (e.key === 'ArrowUp') doc.cuts.move(k, y - step);
+      else if (e.key === 'ArrowDown') doc.cuts.move(k, y + step);
+      else if (e.key === 'Delete' || e.key === 'Backspace') doc.cuts.remove(k);
+      else return;
+      e.preventDefault(); // 화살표로 페이지가 스크롤되지 않게
+      render();
+    });
+
+    el.querySelector('.sl-del').addEventListener('click', () => {
+      if (busy) return;
+      doc.cuts.remove(index());
+      render();
+    });
+
+    linesLayer.append(el);
+    return el;
+  }
+
+  // ─────────────────────────────────────────────
+  // 오른쪽 목록 조작 (이벤트 위임: 목록 전체에 한 번만 등록)
+  // 목록은 render() 때마다 새로 만들어져서, 줄마다 이벤트를 다는 대신
+  // 부모(listEl)에서 "어떤 요소에서 일어났는지(data-action)"를 보고 처리해요.
+  // ─────────────────────────────────────────────
+
+  listEl.addEventListener('change', (e) => {
+    const t = e.target;
+    const i = Number(t.dataset.index);
+    if (t.dataset.action === 'button') doc.cuts.setButton(i, t.checked);
+    if (t.dataset.action === 'cut-y') {
+      const y = Number(t.value);
+      if (Number.isFinite(y)) doc.cuts.move(i, y); // 범위를 벗어나면 move가 알아서 맞춰줘요
+    }
+    render();
+  });
+
+  listEl.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-action="cut-del"]');
+    if (!btn || busy) return;
+    doc.cuts.remove(Number(btn.dataset.index));
+    render();
+  });
+
+  resetBtn.addEventListener('click', () => {
+    if (!doc || !doc.cuts.list().length) return;
+    if (!confirm('자르는 선을 모두 지울까요?')) return;
+    doc.cuts.clear();
+    render();
+  });
+
+  closeBtn.addEventListener('click', () => {
+    if (doc?.cuts.list().length && !confirm('지금 자르던 이미지를 닫을까요?')) return;
+    close();
+  });
+
+  saveBtn.addEventListener('click', save);
+
+  // ─────────────────────────────────────────────
+  // 저장: 조각 만들기 → ZIP → 다운로드
+  // ─────────────────────────────────────────────
+
+  async function save() {
+    if (!doc || busy) return;
+    busy = true;
+    render();
+    try {
+      const s = settings.read(doc.file);
+      const outputs = await slicePieces(doc.file, doc.cuts.pieces(), s, (done, total) => {
+        setStatus(`자르는 중… ${done} / ${total}`);
+      });
+      setStatus('ZIP으로 묶는 중…');
+      const zip = await makeZip(outputs);
+      const url = URL.createObjectURL(zip);
+      const base = doc.file.name.replace(/\.[^.]+$/, '') || 'image';
+      triggerDownload(url, `${base}_slices.zip`);
+      // 다운로드가 시작될 시간을 준 뒤 임시 주소 해제
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      setStatus(`파일 ${outputs.length}개를 ZIP으로 저장했어요 (${formatBytes(zip.size)})`);
+    } catch (err) {
+      console.error(err);
+      setStatus(err.userMessage || '저장하지 못했어요. 다시 시도해 주세요.', true);
+    } finally {
+      busy = false;
+      render();
+    }
+  }
+
+  function setStatus(text, isError = false) {
+    statusEl.textContent = text;
+    statusEl.classList.toggle('error', isError);
+  }
+
+  // ─────────────────────────────────────────────
+  // 그리기
+  // ─────────────────────────────────────────────
+
+  function render() {
+    if (!doc) return;
+    const cuts = doc.cuts.list();
+    const pieces = doc.cuts.pieces();
+    renderLines(cuts);
+    renderPieceLayer(pieces);
+    renderList(cuts, pieces);
+    saveBtn.disabled = busy || cuts.length === 0;
+    resetBtn.disabled = busy || cuts.length === 0;
+    closeBtn.disabled = busy;
+    editor.classList.toggle('busy', busy);
+  }
+
+  /**
+   * 선 요소는 지웠다 새로 만들지 않고 "개수만 맞춘 뒤 위치를 고쳐" 재사용해요.
+   * 끄는 도중에 요소를 새로 만들면 setPointerCapture와 포커스가 사라져서
+   * 끌기가 끊기거든요. 선 순서는 절대 바뀌지 않으니(cuts.js의 move) 순번으로 짝지어도 안전해요.
+   */
+  function renderLines(cuts) {
+    while (lineEls.length < cuts.length) lineEls.push(makeLine());
+    while (lineEls.length > cuts.length) lineEls.pop().remove();
+    cuts.forEach((y, k) => {
+      const el = lineEls[k];
+      el.dataset.index = String(k);
+      el.style.top = pct(y);
+      el.querySelector('output').textContent = `${y}px`;
+      el.setAttribute('aria-label', `자르는 선 ${k + 1}`);
+      el.setAttribute('aria-valuenow', String(y));
+      el.setAttribute('aria-valuemin', '1');
+      el.setAttribute('aria-valuemax', String(doc.height - 1));
+    });
+  }
+
+  /** 이미지 위에 조각 번호와 버튼 영역 표시 (클릭은 통과 — CSS의 pointer-events: none) */
+  function renderPieceLayer(pieces) {
+    piecesLayer.replaceChildren(...pieces.map((p) => {
+      const box = document.createElement('div');
+      box.className = `sl-piece${p.isButton ? ' is-btn' : ''}`;
+      box.style.top = pct(p.top);
+      box.style.height = pct(p.height);
+      const no = document.createElement('span');
+      no.className = 'sl-piece-no';
+      no.textContent = `${pad(p.index + 1, pieces.length)}${p.isButton ? ' · 버튼' : ''}`;
+      box.append(no);
+      return box;
+    }));
+  }
+
+  /**
+   * 오른쪽 목록: 조각 → 선 → 조각 → 선 … 순서로 번갈아 보여줘요.
+   * 목록을 통째로 다시 만들면 입력 중이던 칸의 포커스가 사라지니,
+   * data-key로 "어느 칸이었는지" 기억했다가 다시 포커스를 돌려줘요.
+   */
+  function renderList(cuts, pieces) {
+    const active = listEl.contains(document.activeElement) ? document.activeElement.dataset.key : null;
+    const rows = [];
+
+    pieces.forEach((p, i) => {
+      // 조각 줄
+      const li = document.createElement('li');
+      li.className = `sl-row${p.isButton ? ' is-btn' : ''}`;
+      li.append(
+        text('span', 'sl-no', pad(i + 1, pieces.length)),
+        text('span', 'sl-range', `${p.top} – ${p.bottom}px · 높이 ${p.height}`),
+      );
+      const label = document.createElement('label');
+      label.className = 'pv-check';
+      const check = Object.assign(document.createElement('input'), { type: 'checkbox', checked: p.isButton, disabled: busy });
+      Object.assign(check.dataset, { action: 'button', index: String(i), key: `btn-${i}` });
+      label.append(check, ' 버튼');
+      li.append(label);
+      rows.push(li);
+
+      // 선 줄 (마지막 조각 뒤에는 선이 없음)
+      if (i < cuts.length) {
+        const cut = document.createElement('li');
+        cut.className = 'sl-row sl-cut-row';
+        const input = Object.assign(document.createElement('input'), {
+          type: 'number', min: 1, max: doc.height - 1, value: cuts[i], disabled: busy,
+        });
+        input.setAttribute('aria-label', `자르는 선 ${i + 1} 위치(px)`);
+        Object.assign(input.dataset, { action: 'cut-y', index: String(i), key: `cut-${i}` });
+        const del = Object.assign(document.createElement('button'), { type: 'button', className: 'btn ghost sl-row-del', textContent: '삭제', disabled: busy });
+        del.setAttribute('aria-label', `자르는 선 ${i + 1} 삭제`);
+        Object.assign(del.dataset, { action: 'cut-del', index: String(i) });
+        cut.append(text('span', 'sl-cut-icon', '✂'), input, text('span', 'sl-unit', 'px'), del);
+        rows.push(cut);
+      }
+    });
+
+    listEl.replaceChildren(...rows);
+    if (active) listEl.querySelector(`[data-key="${active}"]`)?.focus();
+  }
+
+  return { addFiles };
+}
+
+// ─────────────────────────────────────────────
+// 작은 도우미 (이 파일에서만 씀)
+// ─────────────────────────────────────────────
+
+/** 번호 앞에 0 채우기: pad(3, 12) → '03'. 파일 이름(slice.js)과 같은 규칙 */
+function pad(n, total) {
+  return String(n).padStart(Math.max(2, String(total).length), '0');
+}
+
+/** 글자만 든 요소 만들기 (textContent를 써서 안전하게) */
+function text(tag, className, content) {
+  const el = document.createElement(tag);
+  el.className = className;
+  el.textContent = content;
+  return el;
+}

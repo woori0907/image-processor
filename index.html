@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Image Processor</title>
+  <meta name="description" content="이미지를 웹용으로 압축하거나 AI로 선명하게 키워요. 모든 처리는 브라우저에서 이루어집니다." />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232f6fed'/%3E%3Cpath d='M7 23l6-8 4 5 3-4 5 7z' fill='%23fff'/%3E%3Ccircle cx='21' cy='10' r='3' fill='%23fff'/%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="wrap">
+    <div id="loadError" class="load-error" role="alert" hidden></div>
+    <header class="head">
+      <h1>Image Processor</h1>
+      <p class="sub">파일은 서버로 전송되지 않고 브라우저에서만 처리됩니다.</p>
+    </header>
+
+    <!--
+      탭 구조 (WAI-ARIA Tabs 패턴)
+      - role="tab" 버튼의 aria-controls가 보여줄 패널(id)을 가리켜요.
+      - 선택된 탭만 aria-selected="true", 나머지 패널은 hidden.
+    -->
+    <div class="tabs" role="tablist" aria-label="도구 선택">
+      <button class="tab" role="tab" type="button" id="tab-compress" data-tab="compress" aria-controls="panel-compress" aria-selected="true">이미지 압축</button>
+      <button class="tab" role="tab" type="button" id="tab-upscale" data-tab="upscale" aria-controls="panel-upscale" aria-selected="false" tabindex="-1">AI 업스케일 <em class="badge">실험 기능</em></button>
+      <button class="tab" role="tab" type="button" id="tab-slice" data-tab="slice" aria-controls="panel-slice" aria-selected="false" tabindex="-1">이미지 자르기</button>
+    </div>
+
+    <!-- ───────────── 압축 탭 ───────────── -->
+    <section class="panel" id="panel-compress" role="tabpanel" aria-labelledby="tab-compress">
+      <p class="panel-intro">고화질 이미지를 넣으면 웹용으로 자동 최적화해요. 크기를 줄이고 가벼운 형식으로 바꿔요.</p>
+
+      <section class="settings" aria-label="압축 설정">
+        <div class="field field-full">
+          <span>출력 형식</span>
+          <div class="seg" role="radiogroup" aria-label="출력 형식" data-setting="format">
+            <label><input type="radio" name="c-format" value="webp" checked /><span>WebP</span></label>
+            <label><input type="radio" name="c-format" value="jpeg" /><span>JPG</span></label>
+            <label><input type="radio" name="c-format" value="both" /><span>WebP + JPG</span></label>
+            <label><input type="radio" name="c-format" value="png" /><span>PNG</span></label>
+            <label><input type="radio" name="c-format" value="original" /><span>원본 형식</span></label>
+          </div>
+          <small class="hint" data-hint-for="format"></small>
+        </div>
+        <label class="field" data-setting="maxWidth">
+          <span>최대 가로 크기</span>
+          <select>
+            <option value="0">원본 크기</option>
+            <option value="1280">1280px</option>
+            <option value="1920" selected>1920px (추천)</option>
+            <option value="2560">2560px</option>
+            <option value="3840">3840px</option>
+          </select>
+        </label>
+        <label class="field" data-setting="quality">
+          <span>품질 <output>80</output></span>
+          <input type="range" min="40" max="100" value="80" />
+        </label>
+      </section>
+
+      <label class="drop" tabindex="0">
+        <input type="file" accept="image/*" multiple hidden />
+        <strong>압축할 이미지를 끌어다 놓거나 클릭해서 선택</strong>
+        <span>JPG · PNG · WebP · GIF(첫 프레임) · 여러 장 동시 가능</span>
+      </label>
+
+      <section class="summary" hidden>
+        <div class="summary-text"></div>
+        <div class="summary-actions">
+          <label class="pv-check select-all"><input type="checkbox" data-action="select-all" /> 전체 선택</label>
+          <button class="btn ghost danger" type="button" data-action="delete-selected" disabled>선택 삭제</button>
+          <button class="btn ghost" type="button" data-action="reprocess">현재 설정으로 다시 압축</button>
+          <button class="btn ghost" type="button" data-action="clear">모두 지우기</button>
+          <button class="btn" type="button" data-action="zip">전체 ZIP 다운로드</button>
+        </div>
+      </section>
+
+      <ul class="list"></ul>
+    </section>
+
+    <!-- ───────────── 업스케일 탭 ───────────── -->
+    <section class="panel" id="panel-upscale" role="tabpanel" aria-labelledby="tab-upscale" hidden>
+      <p class="panel-intro">작은 이미지를 AI로 선명하게 키워요. 처음 사용할 때 AI 파일(약 4MB)을 한 번 내려받아요.</p>
+
+      <section class="settings" aria-label="업스케일 설정">
+        <div class="field field-full">
+          <span>배율</span>
+          <div class="seg" role="radiogroup" aria-label="배율" data-setting="scale">
+            <label><input type="radio" name="u-scale" value="2" checked /><span>2배</span></label>
+            <label><input type="radio" name="u-scale" value="4" /><span>4배</span></label>
+          </div>
+          <small class="hint" data-hint-for="scale"></small>
+        </div>
+        <div class="field field-full">
+          <span>저장 형식</span>
+          <div class="seg" role="radiogroup" aria-label="저장 형식" data-setting="format">
+            <label><input type="radio" name="u-format" value="webp" checked /><span>WebP</span></label>
+            <label><input type="radio" name="u-format" value="jpeg" /><span>JPG</span></label>
+            <label><input type="radio" name="u-format" value="both" /><span>WebP + JPG</span></label>
+            <label><input type="radio" name="u-format" value="png" /><span>PNG</span></label>
+          </div>
+          <small class="hint" data-hint-for="format"></small>
+        </div>
+        <label class="field field-full" data-setting="quality">
+          <span>품질 <output>90</output></span>
+          <input type="range" min="40" max="100" value="90" />
+        </label>
+      </section>
+
+      <label class="drop" tabindex="0">
+        <input type="file" accept="image/*" multiple hidden />
+        <strong>키울 이미지를 끌어다 놓거나 클릭해서 선택</strong>
+        <span>긴 변 2048px 이하 이미지 · 작을수록 빨라요</span>
+      </label>
+
+      <section class="summary" hidden>
+        <div class="summary-text"></div>
+        <div class="summary-actions">
+          <label class="pv-check select-all"><input type="checkbox" data-action="select-all" /> 전체 선택</label>
+          <button class="btn ghost danger" type="button" data-action="delete-selected" disabled>선택 삭제</button>
+          <button class="btn ghost" type="button" data-action="reprocess">현재 설정으로 다시 처리</button>
+          <button class="btn ghost" type="button" data-action="clear">모두 지우기</button>
+          <button class="btn" type="button" data-action="zip">전체 ZIP 다운로드</button>
+        </div>
+      </section>
+
+      <ul class="list"></ul>
+    </section>
+
+    <!-- ───────────── 자르기 탭 ───────────── -->
+    <section class="panel" id="panel-slice" role="tabpanel" aria-labelledby="tab-slice" hidden>
+      <p class="panel-intro">긴 이미지를 가로로 잘라 여러 조각으로 나눠요. 버튼 부분만 따로 잘라 링크를 걸 때 편해요.</p>
+
+      <section class="settings" aria-label="자르기 설정">
+        <div class="field field-full">
+          <span>저장 형식</span>
+          <div class="seg" role="radiogroup" aria-label="저장 형식" data-setting="format">
+            <label><input type="radio" name="s-format" value="original" checked /><span>원본 형식</span></label>
+            <label><input type="radio" name="s-format" value="jpeg" /><span>JPG</span></label>
+            <label><input type="radio" name="s-format" value="webp" /><span>WebP</span></label>
+            <label><input type="radio" name="s-format" value="png" /><span>PNG</span></label>
+          </div>
+          <small class="hint" data-hint-for="format"></small>
+        </div>
+        <label class="field field-full" data-setting="quality">
+          <span>품질 <output>92</output></span>
+          <input type="range" min="40" max="100" value="92" />
+          <small class="hint">JPG·WebP로 저장할 때만 쓰여요. 원본 화질을 지키려면 90 이상을 추천해요.</small>
+        </label>
+      </section>
+
+      <label class="drop" tabindex="0">
+        <input type="file" accept="image/*" hidden />
+        <strong>자를 이미지를 끌어다 놓거나 클릭해서 선택</strong>
+        <span>한 번에 한 장 · 세로로 긴 이미지에 알맞아요</span>
+      </label>
+
+      <!-- 편집 화면: 이미지를 열면 드롭 영역 대신 나타나요 -->
+      <section class="slicer" hidden>
+        <div class="sl-stage">
+          <div class="sl-frame">
+            <img class="sl-img" alt="자를 이미지" draggable="false" />
+            <div class="sl-pieces-layer"></div>
+            <div class="sl-guide" hidden><span></span></div>
+            <div class="sl-lines"></div>
+          </div>
+        </div>
+        <aside class="sl-side">
+          <div class="sl-file">
+            <strong class="sl-name"></strong>
+            <span class="sl-size"></span>
+          </div>
+          <p class="sl-help">
+            이미지를 <b>클릭</b>하면 그 위치에 자르는 선이 생겨요.<br />
+            선은 끌어서 옮기거나, 선택한 뒤 <kbd>↑</kbd><kbd>↓</kbd>로 1px씩(<kbd>Shift</kbd>와 함께 10px) 조정해요.
+            버튼 조각에 체크하면 파일 이름에 <code>_btn</code>이 붙어요.
+          </p>
+          <ol class="sl-list"></ol>
+          <div class="sl-actions">
+            <button class="btn" type="button" data-action="save">조각 ZIP 다운로드</button>
+            <button class="btn ghost" type="button" data-action="reset">선 모두 지우기</button>
+            <button class="btn ghost" type="button" data-action="close">다른 이미지</button>
+          </div>
+          <p class="sl-status" role="status" aria-live="polite"></p>
+        </aside>
+      </section>
+    </section>
+  </main>
+
+  <!-- 미리보기 창은 압축·업스케일 탭이 함께 써요 -->
+  <dialog id="preview" class="preview" aria-labelledby="pvTitle">
+    <div class="pv-head">
+      <div id="pvTitle" class="pv-title"></div>
+      <div id="pvFormats" class="seg" role="radiogroup" aria-label="미리볼 형식"></div>
+      <div class="seg" role="radiogroup" aria-label="보기 방식">
+        <label><input type="radio" name="pvMode" value="compare" checked /><span>비교</span></label>
+        <label><input type="radio" name="pvMode" value="result" /><span>결과</span></label>
+        <label><input type="radio" name="pvMode" value="original" /><span>원본</span></label>
+      </div>
+      <label class="pv-check"><input id="pvActual" type="checkbox" /> 실제 크기</label>
+      <button id="pvClose" class="btn ghost" type="button" aria-label="닫기">닫기</button>
+    </div>
+    <div id="pvStage" class="pv-stage">
+      <div id="pvFrame" class="pv-frame">
+        <img id="pvBase" alt="" draggable="false" />
+        <img id="pvTop" alt="" draggable="false" />
+        <div id="pvHandle" class="pv-handle"></div>
+        <span id="pvTagL" class="pv-tag left">원본</span>
+        <span id="pvTagR" class="pv-tag right"></span>
+      </div>
+    </div>
+    <div class="pv-foot">
+      <div id="pvInfo"></div>
+      <a id="pvDownload" class="btn">다운로드</a>
+    </div>
+  </dialog>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <!-- type="module": import/export를 쓸 수 있고, HTML을 다 읽은 뒤 실행돼요 -->
+  <script type="module" src="js/main.js"></script>
+  <!--
+    안전장치: main.js(모듈)가 실행되지 못했을 때 이유를 알려줘요.
+    이건 일반 스크립트라서 모듈이 막히는 file:// 에서도 실행돼요.
+    모듈은 load 이벤트 전에 실행이 끝나므로, load 때 준비 표시(data-ready)가 없으면 실패한 거예요.
+  -->
+  <script>
+    window.addEventListener('load', function () {
+      if (document.documentElement.dataset.ready) return;
+      var box = document.getElementById('loadError');
+      box.innerHTML = location.protocol === 'file:'
+        ? '<strong>파일을 더블클릭해서 열면 동작하지 않아요.</strong><br>' +
+          '폴더 안의 <code>start.command</code>를 더블클릭하거나, VS Code의 Live Server로 열어주세요.'
+        : '<strong>스크립트를 불러오지 못했어요.</strong><br>' +
+          '⌘ + Shift + R (Windows: Ctrl + Shift + R)로 강력 새로고침해 보세요.';
+      box.hidden = false;
+    });
+  </script>
+</body>
+</html>

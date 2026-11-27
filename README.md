@@ -1,0 +1,184 @@
+# Image Processor
+
+세 가지 도구가 탭으로 나뉘어 있어요.
+
+- **이미지 압축**: 고화질 이미지를 웹용으로 자동 최적화 (크기 줄이기 + 가벼운 형식으로 변환)
+- **AI 업스케일**: 작은 이미지를 AI로 선명하게 2배·4배 키우기
+- **이미지 자르기**: 긴 이미지를 가로로 잘라 여러 조각으로 나누기 (버튼 부분만 따로 잘라 링크 걸 때)
+
+모든 처리는 **사용자의 브라우저 안에서** 이루어져서 서버가 필요 없고, 이미지가 밖으로 전송되지 않아요.
+
+## 실행 방법
+
+ES 모듈(`import`/`export`)을 쓰기 때문에 `index.html`을 더블클릭해서 열면 **동작하지 않아요.**
+(브라우저 보안 정책상 `file://` 주소에서는 모듈을 불러올 수 없어요.)
+아래 방법 중 하나로 간단한 로컬 서버를 띄워주세요.
+
+- **가장 쉬운 방법 (macOS)**: 폴더 안의 `start.command`를 더블클릭 → 브라우저가 자동으로 열려요. (끌 때는 터미널 창 닫기)
+- **VS Code**: 확장 프로그램 "Live Server" 설치 → `index.html` 우클릭 → *Open with Live Server*
+- **터미널**: 이 폴더에서 `python3 -m http.server 8000` 실행 → 브라우저에서 http://localhost:8000
+
+주소 끝에 `#upscale`이나 `#slice`를 붙이면 그 탭이 바로 열려요. (예: http://localhost:8000/#slice)
+
+## 이미지 자르기 사용법
+
+1. **이미지 자르기** 탭에 긴 이미지를 끌어다 놓기
+2. 자르고 싶은 위치를 **클릭** → 분홍색 자르는 선이 생겨요
+   - 선을 **끌어서** 옮기거나, 선을 선택하고 `↑` `↓`로 1px씩 (`Shift`와 함께 10px) 조정
+   - 오른쪽 목록에서 **px 숫자를 직접 입력**해도 돼요
+   - 선 옆 `×` 또는 `Delete` 키로 삭제
+3. 버튼 조각은 오른쪽 목록에서 **버튼**에 체크 → 파일 이름에 `_btn`이 붙어요
+4. **조각 ZIP 다운로드** → `원본이름_01.jpg`, `원본이름_02_btn.jpg`, `원본이름_03.jpg` …
+
+> 버튼이 맨 아래에 있으면 선 1개(조각 2개), 중간에 있으면 버튼 위·아래로 선 2개(조각 3개)를 그으면 돼요.
+
+## 인터넷에 배포하기 (Netlify Drop)
+
+빌드 과정이 없어서 이 폴더를 그대로 올리면 돼요. 올린 뒤에도 이미지는 서버로 가지 않고 각자의 브라우저에서 처리돼요.
+
+**처음 올리기**
+1. https://app.netlify.com/drop 접속 → 무료 계정으로 로그인 (GitHub·Google 계정 가능)
+2. 이 폴더(`image-compressor`)를 페이지의 점선 영역에 통째로 끌어다 놓기
+3. 몇 초 뒤 `https://무작위이름.netlify.app` 주소가 생겨요
+4. (선택) *Site configuration → Change site name*에서 주소 앞부분을 원하는 이름으로 변경
+
+**코드를 고친 뒤 다시 올리기**
+1. Netlify에서 내 사이트 → **Deploys** 탭
+2. 페이지 아래 *"Need to update your site? Drag and drop your site output folder here"* 영역에 폴더를 다시 끌어다 놓기
+   (주소는 그대로 유지돼요)
+
+> 계정 없이 올린 사이트는 일정 시간 뒤 삭제될 수 있으니 꼭 로그인 후 올리세요.
+> `README.md`, `start.command`도 같이 올라가지만 사이트 동작에는 영향이 없어요.
+
+## 폴더 구조
+
+```
+image-compressor/
+├── index.html          화면 구조 (탭 3개 + 공용 미리보기 창)
+├── style.css           디자인
+└── js/
+    ├── main.js         ★ 시작점. 탭별 처리 방법(파이프라인)을 정하고 전체를 연결
+    ├── workspace.js    ★ 탭 하나의 작업 공간 (목록·대기열·버튼). 두 탭이 같이 씀
+    ├── store.js        이미지 목록 데이터 관리 (탭마다 하나씩 생성)
+    ├── formats.js      형식 규칙 (WebP/JPG/PNG, 확장자, 이름 바꾸기)
+    ├── utils.js        작은 도우미 함수 (용량 표시, 다운로드 등)
+    ├── zip.js          ZIP으로 묶기
+    ├── cuts.js         자르는 선 데이터 (추가·이동·삭제 규칙)
+    ├── image/          ── 이미지 처리 (화면을 전혀 모름)
+    │   ├── canvas.js       기본 도구: 디코딩 · 그리기 · 리사이즈 · 인코딩
+    │   ├── compress.js     압축 핵심 로직
+    │   ├── upscale.js      AI 업스케일
+    │   └── slice.js        이미지를 조각으로 자르기
+    └── ui/             ── 화면 (이미지 처리 방법을 전혀 모름)
+        ├── tabs.js         탭 전환
+        ├── settings.js     설정 패널 (탭마다 하나씩 생성)
+        ├── dropzone.js     파일 받기 (드래그·클릭)
+        ├── list.js         목록 · 요약 영역 그리기
+        ├── preview.js      미리보기 창 (비교 슬라이더, 압축·업스케일 탭 공용)
+        └── slicer.js       자르기 탭 편집 화면 (선 긋기·끌기·저장)
+```
+
+### 왜 이렇게 나눴나요?
+
+**1. "화면"과 "로직"을 분리**
+
+- `image/` 폴더는 버튼이나 HTML을 하나도 몰라요. 파일을 받아서 파일을 돌려줄 뿐이에요.
+  → 나중에 디자인을 완전히 바꿔도 이미지 처리 코드는 그대로 쓸 수 있어요.
+- `ui/` 폴더는 압축이 어떻게 되는지 몰라요. 데이터를 받아 그리고, 클릭되면 알려줄 뿐이에요.
+
+**2. 두 탭의 "같은 부분"과 "다른 부분"을 분리**
+
+두 탭은 *파일 받기 → 목록 → 한 장씩 처리 → 결과 표시 → 선택·삭제·ZIP* 흐름이 완전히 같아요.
+다른 건 **"이미지 한 장을 어떻게 처리하느냐"** 하나뿐이에요.
+
+- 같은 부분 → `workspace.js`에 한 번만 작성
+- 다른 부분 → `main.js`의 `compressPipeline` / `upscalePipeline` 함수로 작성해서 넘겨줌
+
+세 번째 탭(예: 형식 변환)을 만들고 싶다면, HTML에 패널을 하나 추가하고
+`main.js`에 파이프라인 함수 하나만 새로 쓰면 돼요.
+
+**3. 흐름이 다른 탭은 따로**
+
+자르기 탭은 *여러 장을 자동 처리*가 아니라 *한 장을 열어 사람이 선을 긋는* 편집 방식이라
+`workspace.js`를 쓰지 않고 `ui/slicer.js`로 따로 만들었어요. 대신 같은 규칙은 그대로 지켜요.
+
+- 선 데이터 규칙 → `cuts.js` (화면·이미지 처리 모두 모름)
+- 실제로 자르기 → `image/slice.js` (화면 모름)
+- 화면 → `ui/slicer.js` (자르는 방법 모름)
+- 형식·품질 설정, 드롭 영역, ZIP은 다른 탭과 같은 코드(`settings.js`, `dropzone.js`, `zip.js`)를 재사용
+- `slicer`도 `addFiles()`를 갖고 있어서, `main.js`의 "아무 데나 놓기·붙여넣기"가 탭 종류를 몰라도 똑같이 동작해요
+
+## 전체 흐름
+
+```
+ 사용자가 이미지를 넣음 (지금 열린 탭으로)
+        │
+        ▼
+ ui/dropzone.js ──► workspace.addFiles()
+                        │  store.create()        데이터 추가
+                        │  list.createRow()      화면에 한 줄 추가
+                        ▼
+                    enqueue()  ── 탭마다 따로 있는 대기열 (한 장씩 차례로)
+                        │
+                        ▼
+                    processItem()
+                        │  settings.read()       이 탭의 설정 읽기
+                        │  process(...)          ← main.js가 넘겨준 파이프라인
+                        │
+                        │   ┌ 압축 탭 ───────────────────────────────┐
+                        │   │ image/compress.js  줄이기 + 형식 변환   │
+                        │   └────────────────────────────────────────┘
+                        │   ┌ 업스케일 탭 ───────────────────────────┐
+                        │   │ image/upscale.js   AI로 키우기          │
+                        │   │ image/compress.js  형식 변환 (크기 유지) │
+                        │   └────────────────────────────────────────┘
+                        │
+                        │  store.setResults()    결과 저장
+                        ▼  list.showResult()     화면에 표시
+ 사용자가 미리보기/다운로드
+```
+
+## 추천 공부 순서
+
+1. **`js/main.js`**: 두 파이프라인 함수를 보면 각 탭이 "무엇을 하는지" 한눈에 보여요.
+2. **`js/workspace.js`의 `processItem()`**: 파이프라인이 언제, 어떻게 불리는지
+3. **`js/image/canvas.js`**: 브라우저에서 이미지를 다루는 기본 3단계 (디코딩 → 그리기 → 인코딩)
+4. **`js/image/compress.js`**: 용량이 줄어드는 원리
+5. **`js/store.js`**: 데이터를 한 곳에서 관리하는 이유, 팩토리 함수, 메모리 정리 (Object URL)
+6. **`js/ui/*`**: 데이터를 화면으로 그리는 방법, 탭 접근성
+7. **`js/cuts.js` → `js/image/slice.js` → `js/ui/slicer.js`**: 데이터 규칙 → 처리 → 화면 순서로 자르기 기능 따라가기
+8. **`js/image/upscale.js`**: AI 모델을 브라우저에서 돌리는 방법 (가장 어려움)
+
+## 코드에서 만나는 주요 개념
+
+| 개념 | 한 줄 설명 | 나오는 곳 |
+|---|---|---|
+| ES 모듈 (`import`/`export`) | 파일끼리 함수를 주고받는 표준 방법 | 모든 파일 |
+| `async` / `await` / Promise | 오래 걸리는 작업을 기다리는 방법 | 거의 모든 파일 |
+| 팩토리 함수 + 클로저 | 함수를 부를 때마다 독립된 상태를 가진 객체를 새로 만듦 | `store.js`, `workspace.js` |
+| 전략(strategy) 패턴 | 바뀌는 부분만 함수로 받아서 끼워 넣기 | `workspace.js`의 `process` |
+| Promise 체인 대기열 | `.then()`으로 이어서 작업을 하나씩 순서대로 | `workspace.js` `enqueue()` |
+| `<canvas>` | 코드로 그림을 그리는 도화지. 리사이즈·형식 변환에 사용 | `image/canvas.js` |
+| Blob / File | 브라우저 메모리 안의 파일 데이터 | `store.js`, `image/*` |
+| Object URL (`blob:...`) | Blob을 `<img>`에 쓰기 위한 임시 주소. 다 쓰면 해제해야 함 | `store.js` |
+| AbortController | 진행 중인 작업을 중간에 멈추는 표준 도구 | `workspace.js`, `main.js` |
+| data 속성 | `id` 대신 `data-setting="format"`처럼 표시해서 탭마다 같은 구조를 찾음 | `ui/settings.js`, `workspace.js` |
+| 이벤트 전파 (`stopPropagation`) | 같은 drop 이벤트가 두 번 처리되지 않게 막기 | `ui/dropzone.js` |
+| ARIA 탭 패턴 | 스크린 리더·키보드 사용자도 탭을 쓸 수 있게 | `ui/tabs.js` |
+| `drawImage` 9개 인자 | 원본의 일부분만 잘라 그리기 (크롭) | `image/slice.js` |
+| Pointer Events + `setPointerCapture` | 마우스·터치를 한 코드로, 끌기 중 커서가 벗어나도 계속 추적 | `ui/slicer.js` |
+| % 좌표 | 원본 px을 %로 바꿔 배치하면 화면 크기가 바뀌어도 다시 계산할 필요 없음 | `ui/slicer.js` |
+| 이벤트 위임 | 매번 새로 그려지는 목록은 부모에 이벤트를 한 번만 달기 | `ui/slicer.js` |
+| 덕 타이핑 | 쓰는 법(`addFiles`)만 같으면 종류가 달라도 같은 자리에 끼울 수 있음 | `main.js` |
+| 상태 → render() | 상태를 바꾸고 화면은 전부 다시 그리는 패턴 | `ui/preview.js` |
+| `textContent` vs `innerHTML` | 사용자 입력은 항상 textContent로 (보안) | `ui/list.js` |
+| 지연 로딩 | 큰 라이브러리는 필요할 때만 불러오기 | `image/upscale.js` |
+| 텐서(tensor) | AI가 다루는 숫자 배열. GPU 메모리라 직접 해제 | `image/upscale.js` |
+
+## 사용하는 외부 라이브러리
+
+| 라이브러리 | 용도 | 불러오는 시점 |
+|---|---|---|
+| [JSZip](https://stuk.github.io/jszip/) 3.10.1 | ZIP 파일 만들기 | 페이지 열 때 (`index.html`) |
+| [TensorFlow.js](https://www.tensorflow.org/js) 4.11.0 | 브라우저에서 AI 실행 | 업스케일 탭에서 처음 처리할 때 |
+| [UpscalerJS](https://upscalerjs.com/) 1.0.0 + esrgan-medium 모델 | AI 업스케일 | 업스케일 탭에서 처음 처리할 때 |
